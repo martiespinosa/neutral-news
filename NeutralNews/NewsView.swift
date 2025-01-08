@@ -8,11 +8,30 @@
 import SwiftUI
 
 struct NewsView: View {
+    let news: [News]
+    
     var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(news.first?.title ?? "")
+                    .font(.title)
+                
+                Text(news.first?.description ?? "")
+            }
+            .padding()
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(news) { new in
+                        MediaHeadlineView(news: new)
+                    }
+                }
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
     }
 }
 
 #Preview {
-    NewsView()
+    NewsView(news: [.mock, .mock, .mock])
 }

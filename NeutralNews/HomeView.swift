@@ -14,7 +14,9 @@ struct HomeView: View {
         NavigationStack {
             List {
                 ForEach(vm.news) { new in
-                    NewsRowView(news: new)
+                    NavigationLink(destination: NewsView(news: vm.news)){
+                        NewsRowView(news: new)
+                    }
                 }
             }
             .navigationTitle("Hoy")
