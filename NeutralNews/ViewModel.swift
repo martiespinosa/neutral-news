@@ -18,6 +18,10 @@ final class ViewModel: NSObject {
     private var currentPubDate: String = ""
     private var currentMedium: Media?
     
+    /// Loads data by fetching the RSS feed for each media item and parsing the XML data.
+    /// This function iterates through all available media types, fetches the data asynchronously,
+    /// and processes it using the `parseXML` function.
+    /// - Note: The function handles invalid URLs and errors during the data fetching process.
     func loadData() async {
         for medium in Media.allCases {
             guard let url = URL(string: medium.pressMedia.link) else {
@@ -36,6 +40,8 @@ final class ViewModel: NSObject {
         }
     }
     
+    /// Parses the provided XML data and processes it using the XMLParser.
+    /// - Parameter data: The XML data to be parsed.
     private func parseXML(data: Data) {
         let parser = XMLParser(data: data)
         parser.delegate = self
@@ -48,6 +54,13 @@ final class ViewModel: NSObject {
 }
 
 extension ViewModel: XMLParserDelegate {
+    /// Parses an XML element and processes its attributes and content.
+    /// - Parameters:
+    ///   - parser: The XML parser instance that is processing the data.
+    ///   - elementName: The name of the current element being parsed.
+    ///   - namespaceURI: The namespace URI associated with the element, if any.
+    ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
+    ///   - attributeDict: A dictionary containing the attributes of the element, with the attribute names as keys and their values as values.
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes attributeDict: [String : String] = [:]) {
         currentElement = elementName
         if currentElement == "item" {
@@ -59,6 +72,10 @@ extension ViewModel: XMLParserDelegate {
         }
     }
     
+    /// Processes the characters found within an XML element and updates the corresponding properties based on the element's name.
+    /// - Parameters:
+    ///   - parser: The XML parser instance that is processing the data.
+    ///   - string: The string containing the characters found within the current XML element.
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         let trimmedString = string.trimmingCharacters(in: .whitespacesAndNewlines)
         switch currentElement {
@@ -77,6 +94,12 @@ extension ViewModel: XMLParserDelegate {
         }
     }
     
+    /// Handles the end of an XML element and processes the data if the element is an "item".
+    /// - Parameters:
+    ///   - parser: The XML parser instance that is processing the data.
+    ///   - elementName: The name of the element that has just ended.
+    ///   - namespaceURI: The namespace URI associated with the element, if any.
+    ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
         if elementName == "item", let medium = currentMedium {
             let newsItem = News(
