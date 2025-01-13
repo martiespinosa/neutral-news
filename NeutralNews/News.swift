@@ -17,8 +17,8 @@ struct News: Decodable, Identifiable {
     let sourceMedium: PressMedia
     
     static let mock = News(
-        title: "Title",
-        description: "Description",
+        title: "Lorem ipsum dolor sit amet",
+        description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
         category: "Category",
         link: "Link",
         pubDate: "PubDate",
