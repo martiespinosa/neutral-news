@@ -19,10 +19,11 @@ struct MediaHeadlineView: View {
             
             Text(news.title)
                 .font(.title2)
+                .fontWeight(.semibold)
             
             Spacer()
             
-            BiasScoreView(biasScore: 65)
+            BiasScoreView()
         }
         .padding()  
         .frame(width: 220, height: 220)
