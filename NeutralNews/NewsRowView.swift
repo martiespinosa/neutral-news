@@ -26,22 +26,17 @@ struct NewsRowView: View {
                 .lineLimit(4)
                 .padding(.top, 8)
             
-            HStack {
-                Text(news.sourceMedium.name)
-                
-                Spacer()
-                
-                Button("Leer más") { }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.small)
-            }
-            .padding(.top, 8)
+            MediaCircleView(media: news.sourceMedium)
+                .padding(.top, 8)
         }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial)
+        .clipShape(.rect(cornerRadius: 20))
+        .padding(.horizontal)
     }
 }
 
 #Preview {
     NewsRowView(news: News.mock)
-        .padding()
 }

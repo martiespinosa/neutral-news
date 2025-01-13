@@ -12,11 +12,12 @@ struct HomeView: View {
     
     var body: some View {
         NavigationStack {
-            List {
+            ScrollView {
                 ForEach(vm.news) { new in
-                    NavigationLink(destination: NewsView(news: vm.news)){
+                    NavigationLink(destination: NewsView(news: vm.news)) {
                         NewsRowView(news: new)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .navigationTitle("Hoy")
