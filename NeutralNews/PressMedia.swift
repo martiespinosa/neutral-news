@@ -12,11 +12,13 @@ struct PressMedia: Decodable {
     let name: String
     let link: String
     let imageName: String
+    let colorName: String
     
     static let mock = PressMedia(
         name: "El País",
         link: "https://www.elpais.com",
-        imageName: "elpais"
+        imageName: "elpais",
+        colorName: "elpais"
     )
 }
 
@@ -26,8 +28,8 @@ enum Media: CaseIterable {
     
     var pressMedia: PressMedia {
         switch self {
-        case .elPais: return PressMedia(name: "El País", link: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada", imageName: "elpais")
-        case .abc: return PressMedia(name: "ABC", link: "https://www.abc.es/rss/2.0/portada/", imageName: "abc")
+        case .elPais: return PressMedia(name: "El País", link: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada", imageName: "elpais", colorName: "elpais")
+        case .abc: return PressMedia(name: "ABC", link: "https://www.abc.es/rss/2.0/portada/", imageName: "abc", colorName: "abc")
         }
     }
 }
