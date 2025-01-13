@@ -105,7 +105,7 @@ extension ViewModel: XMLParserDelegate {
             let newsItem = News(
                 title: currentTitle,
                 description: currentDescription,
-                category: currentCategory,
+                category: currentCategory != "" ? currentCategory : "Sin categoría",
                 link: currentLink,
                 pubDate: currentPubDate,
                 sourceMedium: medium.pressMedia

@@ -15,6 +15,7 @@ struct NewsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(news.first?.title ?? "")
                     .font(.title)
+                    .fontWeight(.semibold)
                 
                 Text(news.first?.description ?? "")
             }
@@ -26,6 +27,7 @@ struct NewsView: View {
                         MediaHeadlineView(news: new)
                     }
                 }
+                .padding(.leading, 16)
             }
         }
         .scrollBounceBehavior(.basedOnSize)
