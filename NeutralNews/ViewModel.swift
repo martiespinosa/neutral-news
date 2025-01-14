@@ -14,6 +14,7 @@ final class ViewModel: NSObject {
     private var currentTitle: String = ""
     private var currentDescription: String = ""
     private var currentCategory: String = ""
+    private var currentImageUrl: String = ""
     private var currentLink: String = ""
     private var currentPubDate: String = ""
     private var currentMedium: Media?
@@ -63,12 +64,18 @@ extension ViewModel: XMLParserDelegate {
     ///   - attributeDict: A dictionary containing the attributes of the element, with the attribute names as keys and their values as values.
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes attributeDict: [String : String] = [:]) {
         currentElement = elementName
+        
         if currentElement == "item" {
             currentTitle = ""
             currentDescription = ""
             currentCategory = ""
+            currentImageUrl = ""
             currentLink = ""
             currentPubDate = ""
+        }
+        
+        if elementName == "media:content", let url = attributeDict["url"] {
+            currentImageUrl = url
         }
     }
     
@@ -106,6 +113,7 @@ extension ViewModel: XMLParserDelegate {
                 title: currentTitle,
                 description: currentDescription,
                 category: currentCategory != "" ? currentCategory : "Sin categoría",
+                imageUrl: currentImageUrl,
                 link: currentLink,
                 pubDate: currentPubDate,
                 sourceMedium: medium.pressMedia

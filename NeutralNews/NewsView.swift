@@ -17,6 +17,14 @@ struct NewsView: View {
                     .font(.title)
                     .fontWeight(.semibold)
                 
+                AsyncImage(url: URL(string: news.first?.imageUrl ?? "")) { image in
+                    image.image?
+                        .resizable()
+                        .scaledToFit()
+                }
+                .frame(maxWidth: .infinity)
+                .clipShape(.rect(cornerRadius: 20))
+                
                 Text(news.first?.description ?? "")
             }
             .padding()

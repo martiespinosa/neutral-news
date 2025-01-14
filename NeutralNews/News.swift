@@ -12,6 +12,7 @@ struct News: Decodable, Identifiable {
     let title: String
     let description: String
     let category: String
+    let imageUrl: String?
     let link: String
     let pubDate: String
     let sourceMedium: PressMedia
@@ -20,6 +21,7 @@ struct News: Decodable, Identifiable {
         title: "Lorem ipsum dolor sit amet",
         description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
         category: "Category",
+        imageUrl: nil,
         link: "Link",
         pubDate: "PubDate",
         sourceMedium: .mock
