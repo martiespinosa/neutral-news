@@ -19,4 +19,8 @@ Implement the basic features of the app, including fetching news from RSS feeds,
 - Display the news of the day from El País and ABC on the home screen provisionally.
 - Start working on secondary views.
 
+**January 15, 2025**
+- Improve home and secondary screens by adding images and news dates.
+- Research Kaggle models to incorporate in the next sprint.
+
 ### Retrospective
