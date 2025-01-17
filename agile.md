@@ -23,4 +23,9 @@ Implement the basic features of the app, including fetching news from RSS feeds,
 - Improve home and secondary screens by adding images and news dates.
 - Research Kaggle models to incorporate in the next sprint.
 
+**January 17, 2025**
+- Make small changes.
+- Add some documentation.
+
+
 ### Retrospective
