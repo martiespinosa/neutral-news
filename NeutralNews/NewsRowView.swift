@@ -14,7 +14,8 @@ struct NewsRowView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(news.category.uppercased())
-                Text(news.pubDate.uppercased())
+                Spacer()
+                Text(String(news.pubDate.toDate()?.formatted(date: .abbreviated, time: .omitted) ?? ""))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
