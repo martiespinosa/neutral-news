@@ -12,7 +12,7 @@ struct MediaHeadlineView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Image(.elpais)
+            Image(.elPais)
                 .resizable()
                 .scaledToFit()
                 .frame(height: 20)

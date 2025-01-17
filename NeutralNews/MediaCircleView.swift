@@ -10,11 +10,11 @@ import SwiftUI
 struct MediaCircleView: View {
     let media: PressMedia
     var color: Color {
-        Color(media.colorName)
+        Color(media.name.normalized())
     }
     
     var body: some View {
-        Image(media.imageName)
+        Image(media.name.normalized())
             .resizable()
             .scaledToFit()
             .frame(width: 24, height: 24)

@@ -19,10 +19,11 @@ final class ViewModel: NSObject {
     private var currentPubDate: String = ""
     private var currentMedium: Media?
     
-    /// Loads data by fetching the RSS feed for each media item and parsing the XML data.
+    /// Loads data by fetching the RSS feed for each media item and parsing the XML data asynchronously.
     /// This function iterates through all available media types, fetches the data asynchronously,
     /// and processes it using the `parseXML` function.
     /// - Note: The function handles invalid URLs and errors during the data fetching process.
+    /// - Important: If some RSS feeds fail to fetch, the process will continue for other media items without terminating.
     func loadData() async {
         for medium in Media.allCases {
             guard let url = URL(string: medium.pressMedia.link) else {
