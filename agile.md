@@ -24,7 +24,7 @@ Implement the basic features of the app, including fetching news from RSS feeds,
 - Research Kaggle models to incorporate in the next sprint.
 
 **January 17, 2025**
-- Make small changes.
+- Add more press media RSS feeds.
 - Add some documentation.
 
 
