@@ -20,6 +20,9 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .refreshable {
+                await vm.loadData()
+            }
             .navigationTitle("Hoy")
         }
         .task {

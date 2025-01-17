@@ -34,7 +34,7 @@ final class ViewModel: NSObject {
             
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                parseXML(data: data)
+                parseXML(data: data, for: medium)
             } catch {
                 print("Error fetching RSS feed: \(error.localizedDescription)")
             }
@@ -43,13 +43,13 @@ final class ViewModel: NSObject {
     
     /// Parses the provided XML data and processes it using the XMLParser.
     /// - Parameter data: The XML data to be parsed.
-    private func parseXML(data: Data) {
+    private func parseXML(data: Data, for medium: Media) {
         let parser = XMLParser(data: data)
         parser.delegate = self
         if parser.parse() {
-            print("Parsed \(news.count) news items")
+            print("Parsed \(news.count) news for \(medium).")
         } else {
-            print("Failed to parse XML")
+            print("Failed to parse XML for \(medium).")
         }
     }
 }
@@ -118,7 +118,10 @@ extension ViewModel: XMLParserDelegate {
                 pubDate: currentPubDate,
                 sourceMedium: medium.pressMedia
             )
-            news.append(newsItem)
+            
+            if !news.contains(where: { $0.link == newsItem.link }) {
+                news.append(newsItem)
+            }
         }
     }
 }
