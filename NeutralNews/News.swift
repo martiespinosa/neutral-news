@@ -15,7 +15,7 @@ struct News: Decodable, Identifiable {
     let imageUrl: String?
     let link: String
     let pubDate: String
-    let sourceMedium: PressMedia
+    let sourceMedium: Media
     
     static let mock = News(
         title: "Lorem ipsum dolor sit amet",
@@ -24,6 +24,6 @@ struct News: Decodable, Identifiable {
         imageUrl: nil,
         link: "Link",
         pubDate: "PubDate",
-        sourceMedium: .mock
+        sourceMedium: .abc
     )
 }

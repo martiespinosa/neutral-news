@@ -8,13 +8,13 @@
 import SwiftUI
 
 struct MediaCircleView: View {
-    let media: PressMedia
+    let media: Media
     var color: Color {
-        Color(media.name.normalized())
+        Color(media.pressMedia.name.normalized())
     }
     
     var body: some View {
-        Image(media.name.normalized())
+        Image(media.pressMedia.name.normalized())
             .resizable()
             .scaledToFit()
             .frame(width: 24, height: 24)
@@ -27,5 +27,5 @@ struct MediaCircleView: View {
 }
 
 #Preview {
-    MediaCircleView(media: .mock)
+    MediaCircleView(media: .abc)
 }

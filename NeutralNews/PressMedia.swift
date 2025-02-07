@@ -8,7 +8,7 @@
 import Foundation
 import SwiftUICore
 
-struct PressMedia: Decodable {
+struct PressMedia: Decodable, Equatable {
     let name: String
     let link: String
     
@@ -18,7 +18,7 @@ struct PressMedia: Decodable {
     )
 }
 
-enum Media: CaseIterable {
+enum Media: CaseIterable, Decodable {
     case abc
     case elPais
     case rtve
@@ -54,4 +54,18 @@ extension String {
             .replacingOccurrences(of: " ", with: "-")
             .filter { $0.isLetter || $0.isNumber || $0 == "-" }
     }
+}
+
+enum Category: String, CaseIterable, Decodable {
+    case sinCategoria = "Sin categoría"
+    case economia = "Economía"
+    case politica = "Política"
+    case ciencia = "Ciencia"
+    case tecnologia = "Tecnología"
+    case cultura = "Cultura"
+    case sociedad = "Sociedad"
+    case deportes = "Deportes"
+    case internacional = "Internacional"
+    case entretenimiento = "Entretenimiento"
+    case religion = "Religión"
 }

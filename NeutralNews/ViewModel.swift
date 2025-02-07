@@ -9,7 +9,8 @@ import Foundation
 
 @Observable
 final class ViewModel: NSObject {
-    var news = [News]()
+    var allNews = [News]()
+    var filteredNews = [News]()
     private var currentElement: String = ""
     private var currentTitle: String = ""
     private var currentDescription: String = ""
@@ -18,6 +19,12 @@ final class ViewModel: NSObject {
     private var currentLink: String = ""
     private var currentPubDate: String = ""
     private var currentMedium: Media?
+    
+    var mediaFilter: Set<Media> = []
+    var categoryFilter: Set<Category> = []
+    var isAnyFilterEnabled: Bool {
+        !mediaFilter.isEmpty || !categoryFilter.isEmpty
+    }
     
     /// Loads data by fetching the RSS feed for each media item and parsing the XML data asynchronously.
     /// This function iterates through all available media types, fetches the data asynchronously,
@@ -48,7 +55,7 @@ final class ViewModel: NSObject {
         let parser = XMLParser(data: data)
         parser.delegate = self
         if parser.parse() {
-            print("Parsed \(news.count) news for \(medium).")
+            print("Parsed \(allNews.count) news for \(medium).")
         } else {
             print("Failed to parse XML for \(medium).")
         }
@@ -110,20 +117,60 @@ extension ViewModel: XMLParserDelegate {
     ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
         if elementName == "item", let medium = currentMedium {
+            let categories = currentCategory
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            
+            let validCategory = categories.first { Category(rawValue: $0) != nil }
+            
+            let finalCategory = validCategory != nil ? Category(rawValue: validCategory!)! : Category.sinCategoria
+            
             let newsItem = News(
                 title: currentTitle,
                 description: currentDescription,
-                category: currentCategory != "" ? currentCategory : "Sin categoría",
+                category: finalCategory.rawValue,
                 imageUrl: currentImageUrl,
                 link: currentLink,
                 pubDate: currentPubDate,
-                sourceMedium: medium.pressMedia
+                sourceMedium: medium
             )
             
-            if !news.contains(where: { $0.link == newsItem.link }) {
-                news.append(newsItem)
+            if !allNews.contains(where: { $0.link == newsItem.link }) {
+                allNews.append(newsItem)
             }
         }
+    }
+    
+    func filterByMedium(_ medium: Media) {
+        if mediaFilter.contains(medium) {
+            mediaFilter.remove(medium)
+        } else {
+            mediaFilter.insert(medium)
+        }
+        
+        if mediaFilter.isEmpty && categoryFilter.isEmpty {
+            filteredNews = allNews
+        } else {
+            filteredNews = filteredNews.filter { mediaFilter.contains($0.sourceMedium) }
+        }
+    }
+    
+    func filterByCategory(_ category: Category) {
+        if categoryFilter.contains(category) {
+            categoryFilter.remove(category)
+        } else {
+            categoryFilter.insert(category)
+        }
+        
+        if mediaFilter.isEmpty && categoryFilter.isEmpty {
+            filteredNews = allNews
+        } else {
+            filteredNews = filteredNews.filter { categoryFilter.contains(Category(rawValue: $0.category) ?? .sinCategoria) }
+        }
+    }
+    
+    func allCategories() -> Set<String> {
+        Set(allNews.map(\.category))
     }
 }
 
