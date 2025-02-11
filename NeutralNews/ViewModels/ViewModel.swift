@@ -12,9 +12,10 @@ final class ViewModel: NSObject {
     var allNews = [News]()
     var filteredNews = [News]()
     private var currentElement: String = ""
+    private var currentElementValue: String = ""
     private var currentTitle: String = ""
     private var currentDescription: String = ""
-    private var currentCategory: String = ""
+    private var currentCategories: [String] = []
     private var currentImageUrl: String = ""
     private var currentLink: String = ""
     private var currentPubDate: String = ""
@@ -32,10 +33,12 @@ final class ViewModel: NSObject {
     /// - Note: The function handles invalid URLs and errors during the data fetching process.
     /// - Important: If some RSS feeds fail to fetch, the process will continue for other media items without terminating.
     func loadData() async {
+        allNews.removeAll()
+        
         for medium in Media.allCases {
             guard let url = URL(string: medium.pressMedia.link) else {
                 print("Invalid URL")
-                return
+                continue
             }
             
             self.currentMedium = medium
@@ -47,6 +50,8 @@ final class ViewModel: NSObject {
                 print("Error fetching RSS feed: \(error.localizedDescription)")
             }
         }
+        
+        applyFilters()
     }
     
     /// Parses the provided XML data and processes it using the XMLParser.
@@ -72,11 +77,12 @@ extension ViewModel: XMLParserDelegate {
     ///   - attributeDict: A dictionary containing the attributes of the element, with the attribute names as keys and their values as values.
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes attributeDict: [String : String] = [:]) {
         currentElement = elementName
+        currentElementValue = ""
         
         if currentElement == "item" {
             currentTitle = ""
             currentDescription = ""
-            currentCategory = ""
+            currentCategories = []
             currentImageUrl = ""
             currentLink = ""
             currentPubDate = ""
@@ -92,20 +98,21 @@ extension ViewModel: XMLParserDelegate {
     ///   - parser: The XML parser instance that is processing the data.
     ///   - string: The string containing the characters found within the current XML element.
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        let trimmedString = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch currentElement {
-        case "title":
-            currentTitle += trimmedString
-        case "description":
-            currentDescription += trimmedString
-        case "category":
-            currentCategory += trimmedString
-        case "link":
-            currentLink += trimmedString
-        case "pubDate":
-            currentPubDate += trimmedString
-        default:
-            break
+        if currentElement == "category" {
+            currentElementValue += string
+        } else {
+            switch currentElement {
+            case "title":
+                currentTitle += string
+            case "description":
+                currentDescription += string
+            case "link":
+                currentLink += string
+            case "pubDate":
+                currentPubDate += string
+            default:
+                break
+            }
         }
     }
     
@@ -116,22 +123,30 @@ extension ViewModel: XMLParserDelegate {
     ///   - namespaceURI: The namespace URI associated with the element, if any.
     ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
+        if elementName == "category" {
+            let category = currentElementValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !category.isEmpty {
+                currentCategories.append(category)
+            }
+        }
+        
         if elementName == "item", let medium = currentMedium {
-            let categories = currentCategory
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let validCategory = Category.allCases.first { category in
+                let normalizedCategory = category.rawValue.normalized()
+                return currentCategories.contains { newsCategory in
+                    newsCategory.normalized() == normalizedCategory
+                }
+            }
             
-            let validCategory = categories.first { Category(rawValue: $0) != nil }
-            
-            let finalCategory = validCategory != nil ? Category(rawValue: validCategory!)! : Category.sinCategoria
+            let finalCategory = validCategory ?? .sinCategoria
             
             let newsItem = News(
-                title: currentTitle,
-                description: currentDescription,
+                title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                description: currentDescription.trimmingCharacters(in: .whitespacesAndNewlines),
                 category: finalCategory.rawValue,
                 imageUrl: currentImageUrl,
-                link: currentLink,
-                pubDate: currentPubDate,
+                link: currentLink.trimmingCharacters(in: .whitespacesAndNewlines),
+                pubDate: currentPubDate.trimmingCharacters(in: .whitespacesAndNewlines),
                 sourceMedium: medium
             )
             
@@ -147,12 +162,7 @@ extension ViewModel: XMLParserDelegate {
         } else {
             mediaFilter.insert(medium)
         }
-        
-        if mediaFilter.isEmpty && categoryFilter.isEmpty {
-            filteredNews = allNews
-        } else {
-            filteredNews = filteredNews.filter { mediaFilter.contains($0.sourceMedium) }
-        }
+        applyFilters()
     }
     
     func filterByCategory(_ category: Category) {
@@ -161,11 +171,20 @@ extension ViewModel: XMLParserDelegate {
         } else {
             categoryFilter.insert(category)
         }
-        
+        applyFilters()
+    }
+    
+    private func applyFilters() {
         if mediaFilter.isEmpty && categoryFilter.isEmpty {
             filteredNews = allNews
-        } else {
-            filteredNews = filteredNews.filter { categoryFilter.contains(Category(rawValue: $0.category) ?? .sinCategoria) }
+            return
+        }
+        
+        filteredNews = allNews.filter { news in
+            let matchesMedia = mediaFilter.isEmpty || mediaFilter.contains(news.sourceMedium)
+            let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains(Category(rawValue: news.category) ?? .sinCategoria)
+            
+            return matchesMedia && matchesCategory
         }
     }
     
