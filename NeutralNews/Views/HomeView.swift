@@ -35,6 +35,19 @@ struct HomeView: View {
         .task {
             await vm.loadData()
             vm.filteredNews = vm.allNews
+            
+            let model = MirrorModel()
+            let groupedNews = model.processMultipleNews(newsArray: vm.allNews)
+            
+            for (index, group) in groupedNews.enumerated() {
+                print("✅ Nuevo grupo de noticias \(index + 1) - Total noticias en el grupo: \(group.count)")
+                for news in group {
+                    print("  - Título: \(news.title)")
+                }
+            }
+            
+            print("🚨 Total noticias: \(vm.allNews.count)")
+            print("🚨 Total grupos de noticias: \(groupedNews.count)")
         }
     }
     
