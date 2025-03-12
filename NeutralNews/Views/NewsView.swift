@@ -8,16 +8,17 @@
 import SwiftUI
 
 struct NewsView: View {
+    let news: News
     let relatedNews: [News]
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(relatedNews.first?.title ?? "")
+                Text(news.title)
                     .font(.title)
                     .fontWeight(.semibold)
                 
-                AsyncImage(url: URL(string: relatedNews.first?.imageUrl ?? "")) { image in
+                AsyncImage(url: URL(string: news.imageUrl ?? "")) { image in
                     image.image?
                         .resizable()
                         .scaledToFit()
@@ -25,7 +26,7 @@ struct NewsView: View {
                 .frame(maxWidth: .infinity)
                 .clipShape(.rect(cornerRadius: 20))
                 
-                Text(relatedNews.first?.description ?? "")
+                Text(news.description)
             }
             .padding()
             
@@ -43,5 +44,5 @@ struct NewsView: View {
 }
 
 #Preview {
-    NewsView(relatedNews: [.mock, .mock, .mock])
+    NewsView(news: .mock, relatedNews: [.mock, .mock, .mock])
 }
