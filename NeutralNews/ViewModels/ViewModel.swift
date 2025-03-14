@@ -27,11 +27,7 @@ final class ViewModel: NSObject {
         !mediaFilter.isEmpty || !categoryFilter.isEmpty
     }
     
-    /// Loads data by fetching the RSS feed for each media item and parsing the XML data asynchronously.
-    /// This function iterates through all available media types, fetches the data asynchronously,
-    /// and processes it using the `parseXML` function.
-    /// - Note: The function handles invalid URLs and errors during the data fetching process.
-    /// - Important: If some RSS feeds fail to fetch, the process will continue for other media items without terminating.
+    /// Carga los datos desde los RSS, realiza el parseo del XML y lo prepara para enviarse al backend.
     func loadData() async {
         allNews.removeAll()
         
@@ -54,8 +50,7 @@ final class ViewModel: NSObject {
         applyFilters()
     }
     
-    /// Parses the provided XML data and processes it using the XMLParser.
-    /// - Parameter data: The XML data to be parsed.
+    /// Parsear el XML y llenar el arreglo de noticias.
     private func parseXML(data: Data, for medium: Media) {
         let parser = XMLParser(data: data)
         parser.delegate = self
@@ -65,16 +60,48 @@ final class ViewModel: NSObject {
             print("Failed to parse XML for \(medium).")
         }
     }
+    
+    /// Función para enviar las noticias al backend.
+    func sendNewsToBackend() async {
+        // Aquí ya no necesitamos convertir a JSON, solo pasamos las noticias al backend.
+        do {
+            let newsData = try JSONEncoder().encode(allNews) // Codifica las noticias en formato JSON
+            
+            // Asegúrate de usar la URL del endpoint correcto de tu backend.
+            guard let url = URL(string: "http://127.0.0.1:5001/neutralnews-ca548/us-central1/procesar_noticias") else {
+                print("URL incorrecta")
+                return
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = newsData
+            
+            // Realiza la solicitud HTTP
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Manejo de la respuesta del servidor
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                if let jsonResponse = try? JSONDecoder().decode([News].self, from: data) {
+                    // Actualiza las noticias agrupadas
+                    self.allNews = jsonResponse
+                    print("Noticias agrupadas: \(self.allNews)")
+                } else {
+                    print("Error al decodificar la respuesta.")
+                }
+            } else {
+                print("Error en la respuesta del servidor.")
+            }
+            
+        } catch {
+            print("Error al enviar las noticias: \(error.localizedDescription)")
+        }
+    }
+    
 }
 
 extension ViewModel: XMLParserDelegate {
-    /// Parses an XML element and processes its attributes and content.
-    /// - Parameters:
-    ///   - parser: The XML parser instance that is processing the data.
-    ///   - elementName: The name of the current element being parsed.
-    ///   - namespaceURI: The namespace URI associated with the element, if any.
-    ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
-    ///   - attributeDict: A dictionary containing the attributes of the element, with the attribute names as keys and their values as values.
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes attributeDict: [String : String] = [:]) {
         currentElement = elementName
         currentElementValue = ""
@@ -93,10 +120,6 @@ extension ViewModel: XMLParserDelegate {
         }
     }
     
-    /// Processes the characters found within an XML element and updates the corresponding properties based on the element's name.
-    /// - Parameters:
-    ///   - parser: The XML parser instance that is processing the data.
-    ///   - string: The string containing the characters found within the current XML element.
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         if currentElement == "category" {
             currentElementValue += string
@@ -116,12 +139,6 @@ extension ViewModel: XMLParserDelegate {
         }
     }
     
-    /// Handles the end of an XML element and processes the data if the element is an "item".
-    /// - Parameters:
-    ///   - parser: The XML parser instance that is processing the data.
-    ///   - elementName: The name of the element that has just ended.
-    ///   - namespaceURI: The namespace URI associated with the element, if any.
-    ///   - qualifiedName: The qualified name of the element (including namespace, if applicable).
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
         if elementName == "category" {
             let category = currentElementValue.trimmingCharacters(in: .whitespacesAndNewlines)

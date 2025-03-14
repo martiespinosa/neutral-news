@@ -1,1 +1,7 @@
-firebase_functions~=0.1.0
+firebase-functions
+firebase-admin
+sentence-transformers
+scikit-learn
+pandas
+numpy
+scipy
