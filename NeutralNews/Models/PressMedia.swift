@@ -8,7 +8,7 @@
 import Foundation
 import SwiftUICore
 
-struct PressMedia: Decodable, Equatable {
+struct PressMedia: Codable, Equatable {
     let name: String
     let link: String
     
@@ -18,7 +18,7 @@ struct PressMedia: Decodable, Equatable {
     )
 }
 
-enum Media: CaseIterable, Decodable {
+enum Media: CaseIterable, Codable {
     case abc
     case elPais
     case rtve

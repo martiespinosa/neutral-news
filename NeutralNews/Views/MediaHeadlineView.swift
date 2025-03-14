@@ -12,13 +12,13 @@ struct MediaHeadlineView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Image(.elPais)
+            Image(news.sourceMedium.pressMedia.name.normalized())
                 .resizable()
                 .scaledToFit()
                 .frame(height: 20)
             
             Text(news.title)
-                .font(.title2)
+                .font(.title3)
                 .fontWeight(.semibold)
             
             Spacer()

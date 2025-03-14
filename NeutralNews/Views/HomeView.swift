@@ -17,7 +17,7 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack {
                     ForEach(vm.filteredNews) { new in
-                        NavigationLink(destination: NewsView(news: new, relatedNews: vm.filteredNews)) {
+                        NavigationLink(destination: NewsView(news: new, relatedNews: oneNewsForMedia())) {
                             NewsRowView(news: new)
                         }
                         .buttonStyle(.plain)
@@ -83,6 +83,14 @@ struct HomeView: View {
         } label: {
             Label("Filter", systemImage: vm.isAnyFilterEnabled ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
+    }
+    
+    func oneNewsForMedia() -> [News] {
+        var oneNewsForMedia: [News] = []
+        for mediaFilter in Media.allCases {
+            oneNewsForMedia.append(vm.filteredNews.filter({ $0.sourceMedium == mediaFilter }).first!)
+        }
+        return oneNewsForMedia
     }
 }
 
