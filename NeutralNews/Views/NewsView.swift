@@ -12,34 +12,44 @@ struct NewsView: View {
     let relatedNews: [News]
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(news.title)
-                    .font(.title)
-                    .fontWeight(.semibold)
-                
-                AsyncImage(url: URL(string: news.imageUrl ?? "")) { image in
-                    image.image?
-                        .resizable()
-                        .scaledToFit()
-                }
-                .frame(maxWidth: .infinity)
-                .clipShape(.rect(cornerRadius: 16))
-                
-                Text(news.description)
-            }
-            .padding()
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(relatedNews) { new in
-                        MediaHeadlineView(news: new)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(news.title)
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        AsyncImage(url: URL(string: news.imageUrl ?? "")) { image in
+                            image.image?
+                                .resizable()
+                                .scaledToFit()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .clipShape(.rect(cornerRadius: 16))
+                        
+                        Text(news.description)
+                    }
+                    .padding()
+                    
+                    Spacer()
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(relatedNews) { new in
+                                NavigationLink(destination: NewsView(news: new, relatedNews: relatedNews)) {
+                                    MediaHeadlineView(news: new)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.leading, 16)
                     }
                 }
-                .padding(.leading, 16)
+                .frame(minHeight: geometry.size.height)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .scrollBounceBehavior(.basedOnSize)
     }
 }
 
