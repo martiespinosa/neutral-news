@@ -18,11 +18,13 @@ struct HomeView: View {
                 LazyVStack {
                     ForEach(vm.filteredNews) { new in
                         NavigationLink(destination: NewsView(news: new, relatedNews: oneNewsForMedia())) {
-                            NewsRowView(news: new)
+                            NewsImageView(news: new)
+                                .padding(.vertical, 4)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal)
             }
             .refreshable {
                 await vm.loadData()
@@ -88,7 +90,9 @@ struct HomeView: View {
     func oneNewsForMedia() -> [News] {
         var oneNewsForMedia: [News] = []
         for mediaFilter in Media.allCases {
-            oneNewsForMedia.append(vm.filteredNews.filter({ $0.sourceMedium == mediaFilter }).first!)
+            if let firstNews = vm.filteredNews.filter({ $0.sourceMedium == mediaFilter }).first {
+                oneNewsForMedia.append(firstNews)
+            }
         }
         return oneNewsForMedia
     }

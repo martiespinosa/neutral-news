@@ -25,13 +25,7 @@ struct NewsRowView: View {
                 .font(.headline)
                 .lineLimit(3)
             
-            AsyncImage(url: URL(string: news.imageUrl!)) { image in
-                image.image?
-                    .resizable()
-                    .scaledToFit()
-            }
-            .frame(maxWidth: .infinity)
-            .clipShape(.rect(cornerRadius: 20))
+            NewsImageView(news: news)
             
             Text(news.description)
                 .foregroundStyle(.secondary)
@@ -51,4 +45,58 @@ struct NewsRowView: View {
 
 #Preview {
     NewsRowView(news: News.mock)
+}
+
+struct NewsImageView: View {
+    let news: News
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                AsyncImage(url: URL(string: news.imageUrl!)) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: 250)
+                            .clipped()
+                    } else {
+                        Color.secondary
+                            .frame(width: geometry.size.width, height: 250)
+                    }
+                }
+                
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .frame(height: 180)
+                    .mask(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.black.opacity(0),
+                                Color.black.opacity(0.2),
+                                Color.black.opacity(0.8),
+                                Color.black.opacity(0.9),
+                                Color.black.opacity(1)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                Text(news.title)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical)
+                    .font(.system(size: 22, design: .serif))
+//                    .font(.title2)
+                    .fontWeight(.semibold)
+//                    .foregroundStyle(.nnForeground)
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: geometry.size.width)
+        }
+        .frame(height: 250)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
 }

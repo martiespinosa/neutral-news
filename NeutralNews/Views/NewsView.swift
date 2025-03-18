@@ -24,7 +24,7 @@ struct NewsView: View {
                         .scaledToFit()
                 }
                 .frame(maxWidth: .infinity)
-                .clipShape(.rect(cornerRadius: 20))
+                .clipShape(.rect(cornerRadius: 16))
                 
                 Text(news.description)
             }
