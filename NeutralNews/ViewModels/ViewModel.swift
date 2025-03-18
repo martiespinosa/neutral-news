@@ -6,8 +6,9 @@
 //
 
 import Foundation
+import FirebaseAuth
 
-@Observable
+@Observable 
 final class ViewModel: NSObject {
     var allNews = [News]()
     var filteredNews = [News]()
@@ -48,6 +49,7 @@ final class ViewModel: NSObject {
         }
         
         applyFilters()
+        authenticateAnonymously()
     }
     
     /// Parsear el XML y llenar el arreglo de noticias.
@@ -61,14 +63,52 @@ final class ViewModel: NSObject {
         }
     }
     
-    /// Función para enviar las noticias al backend.
-    func sendNewsToBackend() async {
-        // Aquí ya no necesitamos convertir a JSON, solo pasamos las noticias al backend.
-        do {
-            let newsData = try JSONEncoder().encode(allNews) // Codifica las noticias en formato JSON
+    func authenticateAnonymously() {
+        Auth.auth().signInAnonymously { authResult, error in
+            if let error = error {
+                print("Error de autenticación: \(error.localizedDescription)")
+                return
+            }
             
-            // Asegúrate de usar la URL del endpoint correcto de tu backend.
-            guard let url = URL(string: "http://127.0.0.1:5001/neutralnews-ca548/us-central1/procesar_noticias") else {
+            guard let user = authResult?.user else {
+                print("No se obtuvo un usuario anónimo válido")
+                return
+            }
+            
+            user.getIDToken { token, error in
+                if let error = error {
+                    print("Error al obtener el token: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let token = token else {
+                    print("No se pudo obtener un token válido")
+                    return
+                }
+                
+                print("Token obtenido correctamente: \(token)")
+                Task {
+                    await self.sendNewsToBackend(withToken: token)
+                }
+            }
+        }
+    }
+
+    /// Función para enviar las noticias al backend.
+    func sendNewsToBackend(withToken token: String) async {
+        do {
+            // Transformar las noticias al formato esperado por el backend
+            let transformedNews = allNews.map { news in
+                return [
+                    "titulo": news.title,
+                    "cuerpo": news.description
+                    // Añade otros campos si son necesarios para tu lógica de agrupación
+                ]
+            }
+            
+            let newsData = try JSONEncoder().encode(transformedNews)
+            
+            guard let url = URL(string: "https://us-central1-neutralnews-ca548.cloudfunctions.net/procesar_noticias") else {
                 print("URL incorrecta")
                 return
             }
@@ -76,22 +116,70 @@ final class ViewModel: NSObject {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.httpBody = newsData
             
             // Realiza la solicitud HTTP
             let (data, response) = try await URLSession.shared.data(for: request)
             
-            // Manejo de la respuesta del servidor
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                if let jsonResponse = try? JSONDecoder().decode([News].self, from: data) {
-                    // Actualiza las noticias agrupadas
-                    self.allNews = jsonResponse
-                    print("Noticias agrupadas: \(self.allNews)")
-                } else {
-                    print("Error al decodificar la respuesta.")
+            // Validar la respuesta HTTP
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Respuesta inválida del servidor")
+                return
+            }
+            
+            // Si recibimos un error de autenticación, intentamos renovar el token
+            if httpResponse.statusCode == 403 {
+                print("Token expirado o inválido. Intentando renovar autenticación...")
+                authenticateAnonymously() // Reautenticar
+                return
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                print("Error HTTP \(httpResponse.statusCode)")
+                if let errorString = String(data: data, encoding: .utf8) {
+                    print("Respuesta del servidor: \(errorString)")
                 }
-            } else {
-                print("Error en la respuesta del servidor.")
+                return
+            }
+            
+            // Intentar decodificar la respuesta JSON
+            do {
+                // Aquí hay que ajustar el tipo de decodificación según la respuesta del backend
+                // El backend devuelve un objeto que incluye "group_number", necesitamos adaptarlo
+                let decoder = JSONDecoder()
+                
+                struct BackendNews: Decodable {
+                    let titulo: String
+                    let cuerpo: String
+                    let group_number: Int
+                    // Añade otros campos que devuelve el backend
+                }
+                
+                let backendResponse = try decoder.decode([BackendNews].self, from: data)
+                
+                // Convertir la respuesta del backend de nuevo a nuestro modelo News
+                // y actualizar las noticias con sus grupos
+                DispatchQueue.main.async {
+                    // Aquí necesitarás mapear la respuesta del backend a tu modelo News
+                    // y actualizar self.allNews con la información de grupos
+                    print("Noticias agrupadas recibidas del backend: \(backendResponse.count)")
+                    
+                    // Ejemplo de cómo podrías actualizar tus noticias:
+                    for (index, news) in self.allNews.enumerated() {
+                        if let matchingBackendNews = backendResponse.first(where: { $0.titulo == news.title }) {
+                            // Actualiza la noticia con su grupo
+                            self.allNews[index].group = matchingBackendNews.group_number
+                        }
+                    }
+                    
+                    self.applyFilters()
+                }
+            } catch {
+                print("Error al decodificar la respuesta del backend: \(error)")
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("Respuesta del servidor: \(jsonString)")
+                }
             }
             
         } catch {
@@ -199,7 +287,9 @@ extension ViewModel: XMLParserDelegate {
         
         filteredNews = allNews.filter { news in
             let matchesMedia = mediaFilter.isEmpty || mediaFilter.contains(news.sourceMedium)
-            let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains(Category(rawValue: news.category) ?? .sinCategoria)
+            let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
+                news.category.normalized() == category.rawValue.normalized()
+            }
             
             return matchesMedia && matchesCategory
         }

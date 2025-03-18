@@ -10,9 +10,7 @@ import FirebaseCore
 
 @main
 struct NeutralNewsApp: App {
-    init() {
-        FirebaseApp.configure()
-    }
+    init() { FirebaseApp.configure() }
     
     var body: some Scene {
         WindowGroup {

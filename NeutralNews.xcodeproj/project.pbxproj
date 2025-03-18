@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4111E2772D8761DE0057CA98 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 4111E2762D8761DE0057CA98 /* FirebaseAuth */; };
 		41A736222D820C8F00E08EA1 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 41A736212D820C8F00E08EA1 /* FirebaseFirestore */; };
 		41A736242D820C8F00E08EA1 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 41A736232D820C8F00E08EA1 /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
@@ -29,6 +30,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				41A736222D820C8F00E08EA1 /* FirebaseFirestore in Frameworks */,
+				4111E2772D8761DE0057CA98 /* FirebaseAuth in Frameworks */,
 				41A736242D820C8F00E08EA1 /* FirebaseFunctions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -74,6 +76,7 @@
 			packageProductDependencies = (
 				41A736212D820C8F00E08EA1 /* FirebaseFirestore */,
 				41A736232D820C8F00E08EA1 /* FirebaseFunctions */,
+				4111E2762D8761DE0057CA98 /* FirebaseAuth */,
 			);
 			productName = NeutralNews;
 			productReference = 419D2FB72D11C96500D95E22 /* NeutralNews.app */;
@@ -349,6 +352,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		4111E2762D8761DE0057CA98 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 41A736202D820C8F00E08EA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
 		41A736212D820C8F00E08EA1 /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 41A736202D820C8F00E08EA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
