@@ -20,6 +20,7 @@ struct PressMedia: Codable, Equatable {
 
 enum Media: CaseIterable, Codable {
     case abc
+    case libertadDigital
     case elPais
     case rtve
     
@@ -28,6 +29,10 @@ enum Media: CaseIterable, Codable {
         case .abc: PressMedia(
             name: "ABC",
             link: "https://www.abc.es/rss/2.0/portada/"
+        )
+        case .libertadDigital: PressMedia(
+            name: "Libertad Digital",
+            link: "https://feeds2.feedburner.com/libertaddigital/portada"
         )
         case .elPais: PressMedia(
             name: "El País",
