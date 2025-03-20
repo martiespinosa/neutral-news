@@ -100,6 +100,7 @@ final class ViewModel: NSObject {
             // Transformar las noticias al formato esperado por el backend
             let transformedNews = allNews.map { news in
                 return [
+                    "id": news.id.uuidString,
                     "titulo": news.title,
                     "cuerpo": news.description
                     // Añade otros campos si son necesarios para tu lógica de agrupación
