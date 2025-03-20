@@ -12,6 +12,7 @@ import FirebaseAuth
 final class ViewModel: NSObject {
     var allNews = [News]()
     var filteredNews = [News]()
+    var groupsOfNews = [[News]]()
     private var currentElement: String = ""
     private var currentElementValue: String = ""
     private var currentTitle: String = ""
@@ -86,7 +87,6 @@ final class ViewModel: NSObject {
                     return
                 }
                 
-                print("Token obtenido correctamente: \(token)")
                 Task {
                     await self.sendNewsToBackend(withToken: token)
                 }
@@ -144,50 +144,55 @@ final class ViewModel: NSObject {
                 return
             }
             
-            // Intentar decodificar la respuesta JSON
-            do {
-                // Aquí hay que ajustar el tipo de decodificación según la respuesta del backend
-                // El backend devuelve un objeto que incluye "group_number", necesitamos adaptarlo
-                let decoder = JSONDecoder()
-                
-                struct BackendNews: Decodable {
-                    let titulo: String
-                    let cuerpo: String
-                    let group_number: Int
-                    // Añade otros campos que devuelve el backend
-                }
-                
-                let backendResponse = try decoder.decode([BackendNews].self, from: data)
-                
-                // Convertir la respuesta del backend de nuevo a nuestro modelo News
-                // y actualizar las noticias con sus grupos
-                DispatchQueue.main.async {
-                    // Aquí necesitarás mapear la respuesta del backend a tu modelo News
-                    // y actualizar self.allNews con la información de grupos
-                    print("Noticias agrupadas recibidas del backend: \(backendResponse.count)")
-                    
-                    // Ejemplo de cómo podrías actualizar tus noticias:
-                    for (index, news) in self.allNews.enumerated() {
-                        if let matchingBackendNews = backendResponse.first(where: { $0.titulo == news.title }) {
-                            // Actualiza la noticia con su grupo
-                            self.allNews[index].group = matchingBackendNews.group_number
-                        }
+            // Decodificar solo id y group_number
+            struct BackendNews: Decodable {
+                let id: String
+                let group_number: Int
+            }
+            
+            let backendResponse = try JSONDecoder().decode([BackendNews].self, from: data)
+            print("Noticias agrupadas recibidas del backend: \(backendResponse.count)")
+            let uniqueGroups = Set(backendResponse.map { $0.group_number })
+            print("Numero de grupos: \(uniqueGroups.count)")
+            
+            let groupCounts = backendResponse.reduce(into: [:]) { counts, news in
+                counts[news.group_number, default: 0] += 1
+            }
+            
+            for (group, count) in groupCounts where count > 1 {
+                print("Grupo \(group): \(count) noticias")
+            }
+            
+            // Asignar group_number usando el id
+            DispatchQueue.main.async {
+                for backendNews in backendResponse {
+                    if let index = self.allNews.firstIndex(where: { $0.id.uuidString == backendNews.id }) {
+                        self.allNews[index].group = backendNews.group_number
                     }
-                    
-                    self.applyFilters()
                 }
-            } catch {
-                print("Error al decodificar la respuesta del backend: \(error)")
-                if let jsonString = String(data: data, encoding: .utf8) {
-                    print("Respuesta del servidor: \(jsonString)")
-                }
+                self.filterGroupedNews()
+                self.applyFilters()
             }
             
         } catch {
-            print("Error al enviar las noticias: \(error.localizedDescription)")
+            print("Error al enviar las noticias al backend: \(error.localizedDescription)")
         }
     }
     
+    // Filtrar las noticias agrupadas y quedarte solo con las que tienen 2 o más noticias en su grupo
+    func filterGroupedNews() {
+        // Agrupar las noticias por su `group_number`
+        let groupedNews = Dictionary(grouping: allNews, by: { $0.group })
+        
+        // Filtrar solo los grupos que tienen 2 o más noticias
+        let filteredGroups = groupedNews.filter { $0.value.count > 1 }
+        
+        // Obtener solo los arrays de noticias, sin el número de grupo
+        let groupedArrays = filteredGroups.map { $0.value }
+        
+        // Asignar el resultado a `groupsOfNews`
+        groupsOfNews = groupedArrays
+    }
 }
 
 extension ViewModel: XMLParserDelegate {

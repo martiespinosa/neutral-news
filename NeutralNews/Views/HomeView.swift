@@ -16,12 +16,14 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack {
-                    ForEach(vm.filteredNews) { new in
-                        NavigationLink(destination: NewsView(news: new, relatedNews: oneNewsForMedia())) {
-                            NewsImageView(news: new)
-                                .padding(.vertical, 4)
+                    ForEach(vm.groupsOfNews, id: \.first!.id) { group in
+                        if let firstNews = group.first {
+                            NavigationLink(destination: NewsView(news: firstNews, relatedNews: group)) {
+                                NewsImageView(news: firstNews)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal)
