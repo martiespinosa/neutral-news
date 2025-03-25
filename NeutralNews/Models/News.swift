@@ -8,7 +8,7 @@
 import Foundation
 
 struct News: Codable, Identifiable {
-    var id = UUID()
+    var id = UUID().uuidString
     let title: String
     let description: String
     let category: String

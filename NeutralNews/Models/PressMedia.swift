@@ -18,11 +18,15 @@ struct PressMedia: Codable, Equatable {
     )
 }
 
-enum Media: CaseIterable, Codable {
-    case abc
-    case libertadDigital
-    case elPais
-    case rtve
+enum Media: String, CaseIterable, Codable {
+    case abc = "abc"
+    case elMundo = "elMundo"
+    case elPais = "elPais"
+    case elPeriodico = "elPeriodico"
+    case elSalto = "elSalto"
+    case laVanguardia = "laVanguardia"
+    case libertadDigital = "libertadDigital"
+    case rtve = "rtve"
     
     var pressMedia: PressMedia {
         switch self {
@@ -30,13 +34,29 @@ enum Media: CaseIterable, Codable {
             name: "ABC",
             link: "https://www.abc.es/rss/2.0/portada/"
         )
-        case .libertadDigital: PressMedia(
-            name: "Libertad Digital",
-            link: "https://feeds2.feedburner.com/libertaddigital/portada"
+        case .elMundo: PressMedia(
+            name: "El Mundo",
+            link: "https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml"
         )
         case .elPais: PressMedia(
             name: "El País",
             link: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"
+        )
+        case .elPeriodico: PressMedia(
+            name: "El Periódico",
+            link: "https://www.elperiodico.com/es/cds/rss/?id=board.xml"
+        )
+        case .elSalto: PressMedia(
+            name: "El Salto",
+            link: "https://www.elsaltodiario.com/general/feed"
+        )
+        case .laVanguardia: PressMedia(
+            name: "La Vanguardia",
+            link: "https://www.lavanguardia.com/rss/home.xml"
+        )
+        case .libertadDigital: PressMedia(
+            name: "Libertad Digital",
+            link: "https://feeds2.feedburner.com/libertaddigital/portada"
         )
         case .rtve: PressMedia(
             name: "RTVE",

@@ -11,15 +11,25 @@ struct MediaHeadlineView: View {
     let news: News
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Image(news.sourceMedium.pressMedia.name.normalized())
-                .resizable()
-                .scaledToFit()
-                .frame(height: 20)
+        VStack(alignment: .leading, spacing: 12) {
+            // TODO: Dejar solo la Image cuando haya el logo de todos los medios
+            if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 24)
+            } else {
+                Text(news.sourceMedium.pressMedia.name)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .fontDesign(.serif)
+                    .foregroundColor(.secondary)
+            }
             
             Text(news.title)
                 .font(.title3)
                 .fontWeight(.semibold)
+                .fontDesign(.serif)
             
             Spacer()
             

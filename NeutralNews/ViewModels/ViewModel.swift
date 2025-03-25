@@ -7,8 +7,9 @@
 
 import Foundation
 import FirebaseAuth
+import FirebaseFirestore
 
-@Observable 
+@Observable
 final class ViewModel: NSObject {
     var allNews = [News]()
     var filteredNews = [News]()
@@ -29,38 +30,56 @@ final class ViewModel: NSObject {
         !mediaFilter.isEmpty || !categoryFilter.isEmpty
     }
     
-    /// Carga los datos desde los RSS, realiza el parseo del XML y lo prepara para enviarse al backend.
-    func loadData() async {
-        allNews.removeAll()
-        
-        for medium in Media.allCases {
-            guard let url = URL(string: medium.pressMedia.link) else {
-                print("Invalid URL")
-                continue
-            }
-            
-            self.currentMedium = medium
-            
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                parseXML(data: data, for: medium)
-            } catch {
-                print("Error fetching RSS feed: \(error.localizedDescription)")
-            }
-        }
-        
-        applyFilters()
-        authenticateAnonymously()
+    override init() {
+        super.init()
+        fetchNewsFromFirestore()
     }
     
-    /// Parsear el XML y llenar el arreglo de noticias.
-    private func parseXML(data: Data, for medium: Media) {
-        let parser = XMLParser(data: data)
-        parser.delegate = self
-        if parser.parse() {
-            print("Parsed \(allNews.count) news for \(medium).")
-        } else {
-            print("Failed to parse XML for \(medium).")
+    func fetchNewsFromFirestore() {
+        let db = Firestore.firestore()
+        db.collection("news").getDocuments { snapshot, error in
+            if let error = error {
+                print("Error fetching news: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let documents = snapshot?.documents else {
+                print("No news found in Firestore")
+                return
+            }
+            
+            let fetchedNews = documents.compactMap { doc -> News? in
+                let data = doc.data()
+                guard let title = data["title"] as? String,
+                      let description = data["description"] as? String,
+                      let group = data["group"] as? Int?,
+                      let category = data["category"] as? String?,
+                      let imageUrl = data["imageUrl"] as? String?,
+                      let link = data["link"] as? String,
+                      let pubDate = data["pubDate"] as? String,
+                      let sourceMediumRaw = data["sourceMedium"] as? String,
+                      let sourceMedium = Media(rawValue: sourceMediumRaw) else {
+                    print("Error parsing news document")
+                    return nil
+                }
+                
+                return News(
+                    title: title,
+                    description: description,
+                    category: category ?? "",
+                    imageUrl: imageUrl ?? "",
+                    link: link,
+                    pubDate: pubDate,
+                    sourceMedium: sourceMedium,
+                    group: group
+                )
+            }
+            
+            DispatchQueue.main.async {
+                self.allNews = fetchedNews
+                self.filterGroupedNews()
+                self.applyFilters()
+            }
         }
     }
     
@@ -82,189 +101,32 @@ final class ViewModel: NSObject {
                     return
                 }
                 
-                guard let token = token else {
+                guard token != nil else {
                     print("No se pudo obtener un token válido")
                     return
                 }
-                
-                Task {
-                    await self.sendNewsToBackend(withToken: token)
-                }
             }
-        }
-    }
-
-    /// Función para enviar las noticias al backend.
-    func sendNewsToBackend(withToken token: String) async {
-        do {
-            // Transformar las noticias al formato esperado por el backend
-            let transformedNews = allNews.map { news in
-                return [
-                    "id": news.id.uuidString,
-                    "titulo": news.title,
-                    "cuerpo": news.description
-                    // Añade otros campos si son necesarios para tu lógica de agrupación
-                ]
-            }
-            
-            let newsData = try JSONEncoder().encode(transformedNews)
-            
-            guard let url = URL(string: "https://us-central1-neutralnews-ca548.cloudfunctions.net/procesar_noticias") else {
-                print("URL incorrecta")
-                return
-            }
-            
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.httpBody = newsData
-            
-            // Realiza la solicitud HTTP
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            // Validar la respuesta HTTP
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("Respuesta inválida del servidor")
-                return
-            }
-            
-            // Si recibimos un error de autenticación, intentamos renovar el token
-            if httpResponse.statusCode == 403 {
-                print("Token expirado o inválido. Intentando renovar autenticación...")
-                authenticateAnonymously() // Reautenticar
-                return
-            }
-            
-            guard (200...299).contains(httpResponse.statusCode) else {
-                print("Error HTTP \(httpResponse.statusCode)")
-                if let errorString = String(data: data, encoding: .utf8) {
-                    print("Respuesta del servidor: \(errorString)")
-                }
-                return
-            }
-            
-            // Decodificar solo id y group_number
-            struct BackendNews: Decodable {
-                let id: String
-                let group_number: Int
-            }
-            
-            let backendResponse = try JSONDecoder().decode([BackendNews].self, from: data)
-            print("Noticias agrupadas recibidas del backend: \(backendResponse.count)")
-            let uniqueGroups = Set(backendResponse.map { $0.group_number })
-            print("Numero de grupos: \(uniqueGroups.count)")
-            
-            let groupCounts = backendResponse.reduce(into: [:]) { counts, news in
-                counts[news.group_number, default: 0] += 1
-            }
-            
-            for (group, count) in groupCounts where count > 1 {
-                print("Grupo \(group): \(count) noticias")
-            }
-            
-            // Asignar group_number usando el id
-            DispatchQueue.main.async {
-                for backendNews in backendResponse {
-                    if let index = self.allNews.firstIndex(where: { $0.id.uuidString == backendNews.id }) {
-                        self.allNews[index].group = backendNews.group_number
-                    }
-                }
-                self.filterGroupedNews()
-                self.applyFilters()
-            }
-            
-        } catch {
-            print("Error al enviar las noticias al backend: \(error.localizedDescription)")
         }
     }
     
-    // Filtrar las noticias agrupadas y quedarte solo con las que tienen 2 o más noticias en su grupo
     func filterGroupedNews() {
-        // Agrupar las noticias por su `group_number`
-        let groupedNews = Dictionary(grouping: allNews, by: { $0.group })
-        
-        // Filtrar solo los grupos que tienen 2 o más noticias
+        let groupedNews = Dictionary(grouping: allNews.compactMap { $0.group != nil ? $0 : nil }, by: { $0.group! })
         let filteredGroups = groupedNews.filter { $0.value.count > 1 }
         
-        // Obtener solo los arrays de noticias, sin el número de grupo
-        let groupedArrays = filteredGroups.map { $0.value }
-        
-        // Asignar el resultado a `groupsOfNews`
-        groupsOfNews = groupedArrays
-    }
-}
-
-extension ViewModel: XMLParserDelegate {
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes attributeDict: [String : String] = [:]) {
-        currentElement = elementName
-        currentElementValue = ""
-        
-        if currentElement == "item" {
-            currentTitle = ""
-            currentDescription = ""
-            currentCategories = []
-            currentImageUrl = ""
-            currentLink = ""
-            currentPubDate = ""
+        let uniqueGroups = filteredGroups.mapValues { newsArray in
+            newsArray.reduce(into: [Media: News]()) { result, news in
+                result[news.sourceMedium] = news
+            }.values.sorted(by: { $0.pubDate > $1.pubDate })
         }
         
-        if elementName == "media:content", let url = attributeDict["url"] {
-            currentImageUrl = url
-        }
-    }
-    
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if currentElement == "category" {
-            currentElementValue += string
-        } else {
-            switch currentElement {
-            case "title":
-                currentTitle += string
-            case "description":
-                currentDescription += string
-            case "link":
-                currentLink += string
-            case "pubDate":
-                currentPubDate += string
-            default:
-                break
+        let sortedGroups = uniqueGroups.sorted { group1, group2 in
+            guard let latestNews1 = group1.value.first, let latestNews2 = group2.value.first else {
+                return false
             }
-        }
-    }
-    
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
-        if elementName == "category" {
-            let category = currentElementValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !category.isEmpty {
-                currentCategories.append(category)
-            }
+            return latestNews1.pubDate > latestNews2.pubDate
         }
         
-        if elementName == "item", let medium = currentMedium {
-            let validCategory = Category.allCases.first { category in
-                let normalizedCategory = category.rawValue.normalized()
-                return currentCategories.contains { newsCategory in
-                    newsCategory.normalized() == normalizedCategory
-                }
-            }
-            
-            let finalCategory = validCategory ?? .sinCategoria
-            
-            let newsItem = News(
-                title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-                description: currentDescription.trimmingCharacters(in: .whitespacesAndNewlines),
-                category: finalCategory.rawValue,
-                imageUrl: currentImageUrl,
-                link: currentLink.trimmingCharacters(in: .whitespacesAndNewlines),
-                pubDate: currentPubDate.trimmingCharacters(in: .whitespacesAndNewlines),
-                sourceMedium: medium
-            )
-            
-            if !allNews.contains(where: { $0.link == newsItem.link }) {
-                allNews.append(newsItem)
-            }
-        }
+        groupsOfNews = sortedGroups.map { $0.value }
     }
     
     func filterByMedium(_ medium: Media) {

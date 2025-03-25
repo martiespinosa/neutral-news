@@ -29,16 +29,16 @@ struct HomeView: View {
                 .padding(.horizontal)
             }
             .refreshable {
-                await vm.loadData()
+                vm.fetchNewsFromFirestore()
             }
             .navigationTitle("Hoy")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
         }
-        .task {
-            await vm.loadData()
-        }
+//        .task {
+//            await vm.loadData()
+//        }
     }
     
     var filterMenu: some View {

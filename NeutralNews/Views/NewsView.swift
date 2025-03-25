@@ -16,9 +16,24 @@ struct NewsView: View {
             ScrollView {
                 VStack {
                     VStack(alignment: .leading, spacing: 16) {
+                        // TODO: Dejar solo la Image cuando haya el logo de todos los medios
+                        if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 30)
+                        } else {
+                            Text(news.sourceMedium.pressMedia.name)
+                                .font(.title)
+                                .fontWeight(.semibold)
+                                .fontDesign(.serif)
+                                .foregroundColor(.secondary)
+                        }
+                        
                         Text(news.title)
                             .font(.title)
-                            .fontWeight(.bold)
+                            .fontWeight(.semibold)
+                            .fontDesign(.serif)
                         
                         AsyncImage(url: URL(string: news.imageUrl ?? "")) { image in
                             image.image?
@@ -29,6 +44,12 @@ struct NewsView: View {
                         .clipShape(.rect(cornerRadius: 16))
                         
                         Text(news.description)
+                            .fontDesign(.serif)
+                        
+                        if let link = URL(string: news.link) {
+                            Link("Leer en la fuente", destination: link)
+                                .fontDesign(.serif)
+                        }
                     }
                     .padding()
                     
@@ -49,6 +70,7 @@ struct NewsView: View {
                 .frame(minHeight: geometry.size.height)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
         }
     }
 }
