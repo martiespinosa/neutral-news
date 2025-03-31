@@ -111,15 +111,9 @@ final class ViewModel: NSObject {
     
     func filterGroupedNews() {
         let groupedNews = Dictionary(grouping: allNews.compactMap { $0.group != nil ? $0 : nil }, by: { $0.group! })
-        let filteredGroups = groupedNews.filter { $0.value.count > 1 }
+        let filteredGroups = groupedNews.filter { $0.value.count > 1 && $0.key != -1}
         
-        let uniqueGroups = filteredGroups.mapValues { newsArray in
-            newsArray.reduce(into: [Media: News]()) { result, news in
-                result[news.sourceMedium] = news
-            }.values.sorted(by: { $0.pubDate > $1.pubDate })
-        }
-        
-        let sortedGroups = uniqueGroups.sorted { group1, group2 in
+        let sortedGroups = filteredGroups.sorted { group1, group2 in
             guard let latestNews1 = group1.value.first, let latestNews2 = group2.value.first else {
                 return false
             }
