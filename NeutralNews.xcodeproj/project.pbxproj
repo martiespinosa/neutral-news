@@ -12,11 +12,27 @@
 		41A736242D820C8F00E08EA1 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 41A736232D820C8F00E08EA1 /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4135461A2D9C1FA0006569EA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 419D2FAF2D11C96500D95E22 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 419D2FB62D11C96500D95E22;
+			remoteInfo = NeutralNews;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		413546162D9C1FA0006569EA /* NeutralNewsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NeutralNewsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		419D2FB72D11C96500D95E22 /* NeutralNews.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NeutralNews.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		413546172D9C1FA0006569EA /* NeutralNewsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NeutralNewsTests;
+			sourceTree = "<group>";
+		};
 		419D2FB92D11C96500D95E22 /* NeutralNews */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = NeutralNews;
@@ -25,6 +41,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		413546132D9C1FA0006569EA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		419D2FB42D11C96500D95E22 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -42,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				419D2FB92D11C96500D95E22 /* NeutralNews */,
+				413546172D9C1FA0006569EA /* NeutralNewsTests */,
 				419D2FB82D11C96500D95E22 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -50,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				419D2FB72D11C96500D95E22 /* NeutralNews.app */,
+				413546162D9C1FA0006569EA /* NeutralNewsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -57,6 +82,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		413546152D9C1FA0006569EA /* NeutralNewsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4135461E2D9C1FA0006569EA /* Build configuration list for PBXNativeTarget "NeutralNewsTests" */;
+			buildPhases = (
+				413546122D9C1FA0006569EA /* Sources */,
+				413546132D9C1FA0006569EA /* Frameworks */,
+				413546142D9C1FA0006569EA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4135461B2D9C1FA0006569EA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				413546172D9C1FA0006569EA /* NeutralNewsTests */,
+			);
+			name = NeutralNewsTests;
+			packageProductDependencies = (
+			);
+			productName = NeutralNewsTests;
+			productReference = 413546162D9C1FA0006569EA /* NeutralNewsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		419D2FB62D11C96500D95E22 /* NeutralNews */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 419D2FC52D11C96600D95E22 /* Build configuration list for PBXNativeTarget "NeutralNews" */;
@@ -89,9 +137,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1610;
+				LastSwiftUpdateCheck = 1630;
 				LastUpgradeCheck = 1610;
 				TargetAttributes = {
+					413546152D9C1FA0006569EA = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 419D2FB62D11C96500D95E22;
+					};
 					419D2FB62D11C96500D95E22 = {
 						CreatedOnToolsVersion = 16.1;
 					};
@@ -115,11 +167,19 @@
 			projectRoot = "";
 			targets = (
 				419D2FB62D11C96500D95E22 /* NeutralNews */,
+				413546152D9C1FA0006569EA /* NeutralNewsTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		413546142D9C1FA0006569EA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		419D2FB52D11C96500D95E22 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -130,6 +190,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		413546122D9C1FA0006569EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		419D2FB32D11C96500D95E22 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -139,7 +206,57 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		4135461B2D9C1FA0006569EA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 419D2FB62D11C96500D95E22 /* NeutralNews */;
+			targetProxy = 4135461A2D9C1FA0006569EA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		4135461C2D9C1FA0006569EA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z458PWZBW7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.espinosa.marti.NeutralNewsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NeutralNews.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NeutralNews";
+			};
+			name = Debug;
+		};
+		4135461D2D9C1FA0006569EA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z458PWZBW7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.espinosa.marti.NeutralNewsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NeutralNews.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NeutralNews";
+			};
+			name = Release;
+		};
 		419D2FC32D11C96600D95E22 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -275,6 +392,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -304,6 +422,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -320,6 +439,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4135461E2D9C1FA0006569EA /* Build configuration list for PBXNativeTarget "NeutralNewsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4135461C2D9C1FA0006569EA /* Debug */,
+				4135461D2D9C1FA0006569EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		419D2FB22D11C96500D95E22 /* Build configuration list for PBXProject "NeutralNews" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

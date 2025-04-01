@@ -141,7 +141,7 @@ final class ViewModel: NSObject {
         applyFilters()
     }
     
-    private func applyFilters() {
+    func applyFilters() {
         if mediaFilter.isEmpty && categoryFilter.isEmpty {
             filteredNews = allNews
             return
