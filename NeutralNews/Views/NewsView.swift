@@ -11,6 +11,7 @@ import UIKit
 struct NewsView: View {
     let news: News
     let relatedNews: [News]
+    var namespace: Namespace.ID
     
     @State private var dominantColor: Color = .gray
     
@@ -78,8 +79,12 @@ struct NewsView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack {
                                 ForEach(relatedNews) { new in
-                                    NavigationLink(destination: NewsView(news: new, relatedNews: relatedNews)) {
+                                    NavigationLink {
+                                        NewsView(news: new, relatedNews: relatedNews, namespace: namespace)
+                                            .navigationTransition(.zoom(sourceID: new.id, in: namespace))
+                                    } label: {
                                         MediaHeadlineView(news: new)
+                                            .matchedTransitionSource(id: new.id, in: namespace)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -141,5 +146,6 @@ struct NewsView: View {
 }
 
 #Preview {
-    NewsView(news: .mock, relatedNews: [.mock, .mock, .mock])
+    let namespace = Namespace().wrappedValue
+    return NewsView(news: .mock, relatedNews: [.mock, .mock, .mock], namespace: namespace)
 }

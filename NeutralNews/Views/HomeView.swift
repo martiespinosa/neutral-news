@@ -9,8 +9,9 @@ import SwiftUI
 
 struct HomeView: View {
     @State private var vm = ViewModel()
-    
     @State private var date: Date = Date.now
+    
+    @Namespace private var animationNamespace
     
     var body: some View {
         NavigationStack {
@@ -18,9 +19,13 @@ struct HomeView: View {
                 LazyVStack {
                     ForEach(vm.groupsOfNews, id: \.first!.id) { group in
                         if let firstNews = group.first {
-                            NavigationLink(destination: NewsView(news: firstNews, relatedNews: group)) {
+                            NavigationLink {
+                                NewsView(news: firstNews, relatedNews: group, namespace: animationNamespace)
+                                    .navigationTransition(.zoom(sourceID: firstNews.id, in: animationNamespace))
+                            } label: {
                                 NewsImageView(news: firstNews)
                                     .padding(.vertical, 4)
+                                    .matchedTransitionSource(id: firstNews.id, in: animationNamespace)
                             }
                             .buttonStyle(.plain)
                         }
@@ -36,9 +41,6 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
         }
-//        .task {
-//            await vm.loadData()
-//        }
     }
     
     var filterMenu: some View {
