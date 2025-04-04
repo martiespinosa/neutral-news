@@ -42,10 +42,23 @@ struct NewsView: View {
                                 .fontWeight(.semibold)
                                 .fontDesign(.serif)
                             
-                            AsyncImage(url: URL(string: news.imageUrl ?? "")) { image in
-                                image.image?
-                                    .resizable()
-                                    .scaledToFit()
+                            AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
+                                switch phase {
+                                case .empty:
+                                    ShimmerView()
+                                        .frame(height: 250)
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                case .failure:
+                                    Image(systemName: "photo")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.gray)
+                                        .frame(height: 250)
+                                @unknown default:
+                                    EmptyView()
+                                }
                             }
                             .frame(maxWidth: .infinity)
                             .clipShape(.rect(cornerRadius: 16))
@@ -75,10 +88,8 @@ struct NewsView: View {
                         }
                     }
                     .frame(minHeight: geometry.size.height)
-                    .onAppear {
-                        Task {
-                            dominantColor = await getDominantColor(from: news.imageUrl)
-                        }
+                    .task {
+                        dominantColor = await getDominantColor(from: news.imageUrl)
                     }
                 }
             }

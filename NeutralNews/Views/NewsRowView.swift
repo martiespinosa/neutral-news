@@ -61,7 +61,7 @@ struct NewsImageView: View {
                             .frame(width: geometry.size.width, height: 250)
                             .clipped()
                     } else {
-                        Color.secondary
+                        ShimmerView()
                             .frame(width: geometry.size.width, height: 250)
                     }
                 }
