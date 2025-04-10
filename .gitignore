@@ -70,3 +70,7 @@ node_modules/
 
 # Firebase
 NeutralNews/GoogleService-Info.plist
+functions/venv/
+functions/config/
+functions/__*
+functions/*.toml

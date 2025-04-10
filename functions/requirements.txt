@@ -1,0 +1,12 @@
+firebase_functions~=0.1.0
+firebase-admin
+sentence-transformers
+scikit-learn
+pandas
+numpy
+scipy
+requests
+hf_xet
+functions-framework==3.*
+flask==2.*
+google-cloud-aiplatform==1.*
