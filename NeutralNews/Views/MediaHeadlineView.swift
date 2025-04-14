@@ -33,7 +33,7 @@ struct MediaHeadlineView: View {
             
             Spacer()
             
-            BiasScoreView()
+            BiasScoreView(biasScore: news.neutralScore ?? 0)
         }
         .padding()  
         .frame(width: 220, height: 220)

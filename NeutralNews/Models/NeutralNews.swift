@@ -6,3 +6,22 @@
 //
 
 import Foundation
+
+struct NeutralNews: Codable, Identifiable {
+    var id = UUID().uuidString
+    let neutralTitle: String
+    let neutralDescription: String
+    let category: String
+    let imageUrl: String?
+//    let pubDate: String
+    var group: Int
+    
+    static let mock = NeutralNews(
+        neutralTitle: "Lorem ipsum dolor sit amet",
+        neutralDescription: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+        category: "Category",
+        imageUrl: nil,
+//        pubDate: "PubDate",
+        group: 0
+    )
+}

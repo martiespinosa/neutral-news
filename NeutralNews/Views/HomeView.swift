@@ -17,23 +17,23 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack {
-                    ForEach(vm.groupsOfNews, id: \.first!.id) { group in
-                        if let firstNews = group.first {
-                            NavigationLink {
-                                NewsView(news: firstNews, relatedNews: group, namespace: animationNamespace)
-                                    .navigationTransition(.zoom(sourceID: firstNews.id, in: animationNamespace))
-                            } label: {
-                                NewsImageView(news: firstNews)
+                    ForEach(vm.filteredNews) { neutralNews in
+                        let imageUrl = vm.getRelatedNews(from: neutralNews).max(by: { $0.neutralScore ?? 0 < $1.neutralScore ?? 0 })?.imageUrl
+                        NavigationLink {
+                            NeutralNewsView(news: neutralNews, imageUrl: imageUrl, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
+                                .navigationTransition(.zoom(sourceID: neutralNews.id, in: animationNamespace))
+                        } label: {
+                                NewsImageView(news: neutralNews, imageUrl: imageUrl)
                                     .padding(.vertical, 4)
-                                    .matchedTransitionSource(id: firstNews.id, in: animationNamespace)
-                            }
-                            .buttonStyle(.plain)
+                                    .matchedTransitionSource(id: neutralNews.id, in: animationNamespace)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal)
             }
             .refreshable {
+                vm.fetchNeutralNewsFromFirestore()
                 vm.fetchNewsFromFirestore()
             }
             .navigationTitle("Hoy")
@@ -45,7 +45,7 @@ struct HomeView: View {
     
     var filterMenu: some View {
         Menu {
-            Menu("Media") {
+            Menu("Medio") {
                 ForEach(Media.allCases, id: \.self) { media in
                     Button {
                         vm.filterByMedium(media)
@@ -61,7 +61,7 @@ struct HomeView: View {
 
                 }
             }
-            Menu("Category") {
+            Menu("Categoria") {
                 ForEach(Category.allCases, id: \.self) { category in
                     Button {
                         vm.filterByCategory(category)
@@ -79,26 +79,16 @@ struct HomeView: View {
             
             if vm.isAnyFilterEnabled {
                 Section {
-                    Button("Clear Filters", role: .destructive) {
+                    Button("Limpiar Filtros", role: .destructive) {
                         vm.mediaFilter.removeAll()
                         vm.categoryFilter.removeAll()
-                        vm.filteredNews = vm.allNews
+                        vm.filteredNews = vm.neutralNews
                     }
                 }
             }
         } label: {
-            Label("Filter", systemImage: vm.isAnyFilterEnabled ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            Label("Filtrar", systemImage: vm.isAnyFilterEnabled ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
-    }
-    
-    func oneNewsForMedia() -> [News] {
-        var oneNewsForMedia: [News] = []
-        for mediaFilter in Media.allCases {
-            if let firstNews = vm.filteredNews.filter({ $0.sourceMedium == mediaFilter }).first {
-                oneNewsForMedia.append(firstNews)
-            }
-        }
-        return oneNewsForMedia
     }
 }
 

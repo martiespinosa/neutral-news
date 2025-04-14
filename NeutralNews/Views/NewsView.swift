@@ -22,76 +22,58 @@ struct NewsView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack {
-                        VStack(alignment: .leading, spacing: 16) {
-                            // TODO: Dejar solo la Image cuando haya el logo de todos los medios
-                            if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: 30)
-                            } else {
-                                Text(news.sourceMedium.pressMedia.name)
-                                    .font(.title)
-                                    .fontWeight(.semibold)
-                                    .fontDesign(.serif)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text(news.title)
+                    VStack(alignment: .leading, spacing: 16) {
+                        // TODO: Dejar solo la Image cuando haya el logo de todos los medios
+                        if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 30)
+                        } else {
+                            Text(news.sourceMedium.pressMedia.name)
                                 .font(.title)
                                 .fontWeight(.semibold)
                                 .fontDesign(.serif)
-                            
-                            AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
-                                switch phase {
-                                case .empty:
-                                    ShimmerView()
-                                        .frame(height: 250)
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFit()
-                                case .failure:
-                                    Image(systemName: "photo")
-                                        .font(.largeTitle)
-                                        .foregroundColor(.gray)
-                                        .frame(height: 250)
-                                @unknown default:
-                                    EmptyView()
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .clipShape(.rect(cornerRadius: 16))
-                            
-                            Text(news.description)
-                                .fontDesign(.serif)
-                            
-                            if let link = URL(string: news.link) {
-                                Link("Leer en la fuente", destination: link)
-                                    .fontDesign(.serif)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Text(news.title)
+                            .font(.title)
+                            .fontWeight(.semibold)
+                            .fontDesign(.serif)
+                        
+                        AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
+                            switch phase {
+                            case .empty:
+                                ShimmerView()
+                                    .frame(height: 250)
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                            case .failure:
+                                Image(systemName: "photo")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.gray)
+                                    .frame(height: 250)
+                            @unknown default:
+                                EmptyView()
                             }
                         }
-                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .clipShape(.rect(cornerRadius: 16))
+                        
+                        Text(news.description)
+                            .fontDesign(.serif)
+                        
+                        if let link = URL(string: news.link) {
+                            Link("Leer más en la fuente", destination: link)
+                                .fontDesign(.serif)
+                        }
                         
                         Spacer()
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(relatedNews) { new in
-                                    NavigationLink {
-                                        NewsView(news: new, relatedNews: relatedNews, namespace: namespace)
-                                            .navigationTransition(.zoom(sourceID: new.id, in: namespace))
-                                    } label: {
-                                        MediaHeadlineView(news: new)
-                                            .matchedTransitionSource(id: new.id, in: namespace)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.leading, 16)
-                        }
                     }
+                    .padding()
                     .frame(minHeight: geometry.size.height)
                     .task {
                         dominantColor = await getDominantColor(from: news.imageUrl)

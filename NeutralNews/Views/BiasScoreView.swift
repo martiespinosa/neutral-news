@@ -8,9 +8,7 @@
 import SwiftUI
 
 struct BiasScoreView: View {
-    var biasScore: Int {
-        Int.random(in: 0...100)
-    }
+    var biasScore: Int
     let maxScore = 100
     let dimensions: CGFloat = 10
     
@@ -39,6 +37,6 @@ struct BiasScoreView: View {
 }
 
 #Preview {
-    BiasScoreView()
+    BiasScoreView(biasScore: 50)
         .padding()
 }

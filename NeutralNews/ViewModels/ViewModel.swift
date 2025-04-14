@@ -12,8 +12,9 @@ import FirebaseFirestore
 @Observable
 final class ViewModel: NSObject {
     var allNews = [News]()
-    var filteredNews = [News]()
+    var filteredNews = [NeutralNews]()
     var groupsOfNews = [[News]]()
+    var neutralNews = [NeutralNews]()
     private var currentElement: String = ""
     private var currentElementValue: String = ""
     private var currentTitle: String = ""
@@ -22,6 +23,7 @@ final class ViewModel: NSObject {
     private var currentImageUrl: String = ""
     private var currentLink: String = ""
     private var currentPubDate: String = ""
+    private var currentNeutralScore: Int = 0
     private var currentMedium: Media?
     
     var mediaFilter: Set<Media> = []
@@ -32,7 +34,56 @@ final class ViewModel: NSObject {
     
     override init() {
         super.init()
+        fetchNeutralNewsFromFirestore()
         fetchNewsFromFirestore()
+    }
+    
+    func fetchNeutralNewsFromFirestore() {
+        let db = Firestore.firestore()
+        db.collection("neutral_news").getDocuments { snapshot, error in
+            if let error = error {
+                print("Error fetching neutral news: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let documents = snapshot?.documents else {
+                print("No neutral news found in Firestore")
+                return
+            }
+            
+            let fetchedNeutralNews = documents.compactMap { doc -> NeutralNews? in
+                let data = doc.data()
+                guard let neutralTitle = data["neutral_title"] as? String,
+                      let neutralDescription = data["neutral_description"] as? String,
+                      let group = data["group_number"] as? Int,
+                      let category = data["category"] as? String
+//                      let imageUrl = data["imageUrl"] as? String?,
+//                      let pubDate = data["pubDate"] as? String
+                else {
+                    print("Error parsing news document")
+                    return nil
+                }
+                
+                return NeutralNews(
+                    neutralTitle: neutralTitle,
+                    neutralDescription: neutralDescription,
+                    category: category,
+                    imageUrl: /*imageUrl ??*/ "",
+//                    pubDate: pubDate,
+                    group: group
+                )
+            }
+            
+            DispatchQueue.main.async {
+                self.neutralNews = fetchedNeutralNews
+                self.filterGroupedNews()
+                self.applyFilters()
+            }
+        }
+    }
+    
+    func getRelatedNews(from neutralNews: NeutralNews) -> [News] {
+        groupsOfNews.first(where: { $0.first?.group == neutralNews.group }) ?? []
     }
     
     func fetchNewsFromFirestore() {
@@ -57,6 +108,7 @@ final class ViewModel: NSObject {
                       let imageUrl = data["imageUrl"] as? String?,
                       let link = data["link"] as? String,
                       let pubDate = data["pubDate"] as? String,
+                      let neutralScore = data["neutral_score"] as? Int?,
                       let sourceMediumRaw = data["sourceMedium"] as? String,
                       let sourceMedium = Media(rawValue: sourceMediumRaw) else {
                     print("Error parsing news document")
@@ -71,6 +123,7 @@ final class ViewModel: NSObject {
                     link: link,
                     pubDate: pubDate,
                     sourceMedium: sourceMedium,
+                    neutralScore: neutralScore,
                     group: group
                 )
             }
@@ -143,17 +196,17 @@ final class ViewModel: NSObject {
     
     func applyFilters() {
         if mediaFilter.isEmpty && categoryFilter.isEmpty {
-            filteredNews = allNews
+            filteredNews = neutralNews
             return
         }
         
-        filteredNews = allNews.filter { news in
-            let matchesMedia = mediaFilter.isEmpty || mediaFilter.contains(news.sourceMedium)
+        filteredNews = neutralNews.filter { news in
+//            let matchesMedia = mediaFilter.isEmpty || mediaFilter.contains(news.sourceMedium)
             let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
                 news.category.normalized() == category.rawValue.normalized()
             }
             
-            return matchesMedia && matchesCategory
+            return /*matchesMedia &&*/ matchesCategory
         }
     }
     

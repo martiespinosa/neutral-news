@@ -8,32 +8,33 @@
 import SwiftUI
 
 struct NewsRowView: View {
-    let news: News
+    let news: NeutralNews
+    let imageUrl: String?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(news.category.uppercased())
                 Spacer()
-                Text(String(news.pubDate.toDate()?.formatted(date: .abbreviated, time: .omitted) ?? ""))
+//                Text(String(news.pubDate.toDate()?.formatted(date: .abbreviated, time: .omitted) ?? ""))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             
-            Text(news.title)
+            Text(news.neutralTitle)
                 .font(.headline)
                 .lineLimit(3)
             
-            NewsImageView(news: news)
+            NewsImageView(news: news, imageUrl: imageUrl)
             
-            Text(news.description)
+            Text(news.neutralDescription)
                 .foregroundStyle(.secondary)
                 .lineLimit(5)
                 .padding(.top, 8)
             
-            MediaCircleView(media: news.sourceMedium)
-                .padding(.top, 8)
+//            MediaCircleView(media: news.sourceMedium)
+//                .padding(.top, 8)
         }
         .padding()
         .frame(maxWidth: .infinity)
@@ -44,16 +45,17 @@ struct NewsRowView: View {
 }
 
 #Preview {
-    NewsRowView(news: News.mock)
+    NewsRowView(news: NeutralNews.mock, imageUrl: nil)
 }
 
 struct NewsImageView: View {
-    let news: News
+    let news: NeutralNews
+    let imageUrl: String?
     
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
-                AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
+                AsyncImage(url: URL(string: imageUrl ?? "")) { phase in
                     if let image = phase.image {
                         image
                             .resizable()
@@ -83,7 +85,7 @@ struct NewsImageView: View {
                         )
                     )
                 
-                Text(news.title)
+                Text(news.neutralTitle)
                     .padding(.horizontal, 12)
                     .padding(.vertical)
                     .font(.system(size: 22, design: .serif))
