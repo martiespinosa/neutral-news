@@ -64,6 +64,8 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env*
+functions/.env*
 
 # dataconnect generated files
 .dataconnect
@@ -72,5 +74,5 @@ node_modules/
 NeutralNews/GoogleService-Info.plist
 functions/venv/
 functions/config/
-functions/__*
+functions/__pychache__
 functions/*.toml

@@ -2,7 +2,7 @@ import json
 from firebase_functions import https_fn
 from src.parsers import parse_xml
 from src.process import process_news_groups
-from src.grouping import agrupar_noticias
+from src.grouping import group_news
 from src.storage import store_news_in_firestore, update_groups_in_firestore
 import traceback
 import requests
@@ -87,8 +87,8 @@ def news_api(req: https_fn.Request) -> https_fn.Response:
                             "POST /news_api": "Groups news sent in the request body"
                         },
                         "post_format": [
-                            {"id": "news-id-1", "titulo": "News title 1", "cuerpo": "News body 1"}, 
-                            {"id": "news-id-2", "titulo": "News title 2", "cuerpo": "News body 2"}
+                            {"id": "news-id-1", "title": "News title 1", "description": "News body 1"}, 
+                            {"id": "news-id-2", "title": "News title 2", "description": "News body 2"}
                         ]
                     }, ensure_ascii=False),
                     content_type="application/json"
@@ -129,7 +129,7 @@ def news_api(req: https_fn.Request) -> https_fn.Response:
             
             # Call the function to group the news directly
             print(f"ℹ️ Processing {len(noticias)} news sent via POST...")
-            noticias_agrupadas = agrupar_noticias(noticias)
+            noticias_agrupadas = group_news(noticias)
             
             # Return the grouped news as a response
             return https_fn.Response(

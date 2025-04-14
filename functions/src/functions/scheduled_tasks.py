@@ -7,7 +7,7 @@ from src.storage import store_news_in_firestore
 from src.config import initialize_firebase
 from src.functions.news_api import fetch_all_rss
 
-@scheduler_fn.on_schedule(schedule="every 1 hours", memory=4096, timeout_sec=540)
+@scheduler_fn.on_schedule(schedule="every 4 hours", memory=4096, timeout_sec=540)
 def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
     try:
         print("Starting periodic RSS loading...")
@@ -35,7 +35,7 @@ def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
         traceback.print_exc()
         return None
 
-@scheduler_fn.on_schedule(schedule="every 1 hours", memory=4096, timeout_sec=300)
+# @scheduler_fn.on_schedule(schedule="every 1 hours", memory=4096, timeout_sec=300)
 def group_news(event: scheduler_fn.ScheduledEvent) -> None:
     try:
         print("Starting scheduled news grouping...")

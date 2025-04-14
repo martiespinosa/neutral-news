@@ -60,8 +60,8 @@ def get_news_for_grouping():
         data = doc.to_dict()
         news_item = {
             "id": data["id"],
-            "titulo": data["title"],
-            "cuerpo": data["description"],
+            "title": data["title"],
+            "description": data["description"],
             "source_medium": data["sourceMedium"]
         }
         
@@ -115,65 +115,65 @@ def update_groups_in_firestore(grouped_news, news_docs):
     if current_batch > 0:
         batch.commit()
     
-    print(f"Actualizados grupos para {updated_count} noticias en Firestore")
     return updated_count
 
-def store_neutralized_groups(grouped_news, news_docs):
+def update_news_with_neutral_scores(sources, neutralization_result):
     """
-    Store neutralized news groups in Firestore
+    Actualiza las noticias originales con sus puntuaciones de neutralidad.
     """
-    db = initialize_firebase()
-    batch = db.batch()
-    neutralized_count = 0
-    current_batch = 0
-    
-    groups = {}
-    for item in grouped_news:
-        group_num = item["group_number"]
-        if group_num is not None:
-            if group_num not in groups:
-                groups[group_num] = []
-            groups[group_num].append(item["id"])
-    
-    for group_num, news_ids in groups.items():
-        if len(news_ids) < 2:
-            continue
+    try:
+        db = initialize_firebase()
+        batch = db.batch()
+        updated_count = 0
         
-        titles = []
-        descriptions = []
-        for news_id in news_ids:
-            if news_id in news_docs:
-                doc_data = news_docs[news_id].to_dict()
-                titles.append(doc_data["title"])
-                descriptions.append(doc_data["description"])
+        source_ratings = neutralization_result.get("source_ratings", [])
+        for rating in source_ratings:
+            source_medium = rating.get("source_medium")
+            neutral_score = rating.get("rating")
+            
+            # Buscar las noticias correspondientes
+            for source in sources:
+                if source.get("source_medium") == source_medium:
+                    news_id = source.get("id")
+                    if news_id:
+                        news_ref = db.collection('news').document(news_id)
+                        batch.update(news_ref, {"neutral_score": neutral_score})
+                        updated_count += 1
         
-        from .neutralization import neutralize_texts
-        neutral_title = neutralize_texts(titles, "título")
-        neutral_desc = neutralize_texts(descriptions, "descripción")
-        
-        group_ref = db.collection('neutralized_groups').document(str(group_num))
-        group_data = {
-            "group_number": int(group_num),
-            "news_ids": news_ids,
-            "neutral_title": neutral_title,
-            "neutral_description": neutral_desc,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        }
-        batch.set(group_ref, group_data, merge=True)
-        neutralized_count += 1
-        current_batch += 1
-        
-        if current_batch >= 450:
+        # Commit the batch
+        if updated_count > 0:
             batch.commit()
-            batch = db.batch()
-            current_batch = 0
-    
-    if current_batch > 0:
-        batch.commit()
-    
-    print(f"Neutralized and stored {neutralized_count} groups in Firestore")
-    return neutralized_count
+        
+        return updated_count
+        
+    except Exception as e:
+        print(f"Error in update_news_with_neutral_scores: {str(e)}")
+        return 0
+
+def store_neutral_news(group_number, neutralization_result, source_ids):
+    """
+    Almacena el resultado de la neutralización en la colección neutral_news.
+    """
+    try:
+        db = initialize_firebase()
+        
+        neutral_news_ref = db.collection('neutral_news').document(str(group_number))
+        neutral_news_data = {
+            "group_number": group_number,
+            "neutral_title": neutralization_result.get("neutral_title"),
+            "neutral_description": neutralization_result.get("neutral_description"),
+            "category": neutralization_result.get("category"),
+            "created_at": datetime.now(),
+            "source_ids": source_ids,
+        }
+        
+        neutral_news_ref.set(neutral_news_data)
+        print(f"Stored neutral news for group {group_number}")
+        return True
+        
+    except Exception as e:
+        print(f"Error in store_neutral_news: {str(e)}")
+        return False
 
 def delete_old_news(hours=72):
     """

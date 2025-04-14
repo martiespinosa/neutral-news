@@ -9,4 +9,5 @@ requests
 hf_xet
 functions-framework==3.*
 flask==2.*
-google-cloud-aiplatform==1.*
+openai
+dotenv

@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import traceback
 
-def agrupar_noticias(noticias_json):
+def group_news(noticias_json):
     """
-    Agrupa noticias basándose en su similitud semántica
+    Groups news based on their semantic similarity
     """
     try:
         print("ℹ️ Starting news grouping...")
@@ -12,26 +12,26 @@ def agrupar_noticias(noticias_json):
         df = pd.DataFrame(noticias_json)
                 
         # Check that the required columns exist
-        if "id" not in df.columns or "titulo" not in df.columns or "cuerpo" not in df.columns:
-            raise ValueError("The JSON must contain the columns 'id', 'titulo' and 'cuerpo' with the text of the news")
+        if "id" not in df.columns or "title" not in df.columns or "description" not in df.columns:
+            raise ValueError("The JSON must contain the columns 'id', 'title' and 'description' with the text of the news")
         
-        # Preparar columna para grupos nuevos
+        # Prepare column for new groups
         df["group_number"] = None
         
-        # Preservar los grupos existentes
+        # Preserve existing groups
         has_reference_news = "existing_group" in df.columns
         if has_reference_news:
-            # Copiar grupos existentes a group_number
+            # Copy existing groups to group_number
             df.loc[df["existing_group"].notna(), "group_number"] = df.loc[df["existing_group"].notna(), "existing_group"]
             
-            # Identificar noticias que ya tienen grupo (referencias) y las que no (a agrupar)
+            # Identify news that already have a group (references) and those that don't (to group)
             reference_mask = df["existing_group"].notna()
             df["is_reference"] = reference_mask
             
-            # Contar cuántas noticias necesitan ser agrupadas
+            # Count how many news items need to be grouped
             to_group_count = (~reference_mask).sum()
             
-            # Si todas las noticias ya tienen grupo, no hay nada que hacer
+            # If all news already have a group, there's nothing to do
             if to_group_count == 0:
                 return df[["id", "group_number"]].to_dict(orient='records')
         else:
@@ -46,8 +46,8 @@ def agrupar_noticias(noticias_json):
         print("ℹ️ Loading embeddings model...")
         from sentence_transformers import SentenceTransformer
         
-        # Concatenate 'titulo' and 'cuerpo' into a new column 'noticia_completa'
-        df["noticia_completa"] = df["titulo"].fillna("") + " " + df["cuerpo"].fillna("")
+        # Concatenate 'title' and 'description' into a new column 'noticia_completa'
+        df["noticia_completa"] = df["title"].fillna("") + " " + df["description"].fillna("")
         
         model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", 
                                     cache_folder="/tmp/sentence_transformers")
@@ -56,7 +56,7 @@ def agrupar_noticias(noticias_json):
         embeddings = model.encode(df["noticia_completa"].tolist(), convert_to_numpy=True)
                 
         # Parameters for clustering
-        eps = 0.25  # Distance threshold
+        eps = 0.24  # Distance threshold
         min_samples = 2  # Minimum number of samples in a cluster
         n_neighbors = min(5, len(df))  # Number of neighbors to consider
         
@@ -95,26 +95,26 @@ def agrupar_noticias(noticias_json):
         clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
         group_labels = clustering.fit_predict(sparse_matrix.tocsr())
                 
-        # Asignar grupos solo a las noticias que no tengan uno
+        # Assign groups only to news that don't have one
         temp_group_column = "temp_group"
         df[temp_group_column] = group_labels
         
-        # Mapear nuevos grupos a los existentes cuando haya coincidencias
+        # Map new groups to existing ones when there are matches
         if has_reference_news:
             group_mapping = {}
             for new_group in np.unique(group_labels):
-                if new_group == -1:  # Saltar ruido/outliers
+                if new_group == -1:  # Skip noise/outliers
                     continue
                     
-                # Buscar noticias de este nuevo grupo temporal
+                # Find news in this new temporary group
                 group_items = df[df[temp_group_column] == new_group]
                 
-                # Verificar si alguna tiene un grupo existente
+                # Check if any have an existing group
                 ref_items = group_items[group_items["is_reference"]]
                 if len(ref_items) > 0:
                     existing_groups = ref_items["existing_group"].unique()
                     
-                    # Si hay más de un grupo existente, elegir el más frecuente
+                    # If there are multiple existing groups, choose the most frequent
                     if len(existing_groups) > 1:
                         counts = ref_items["existing_group"].value_counts()
                         most_common = counts.idxmax()
@@ -122,16 +122,16 @@ def agrupar_noticias(noticias_json):
                     else:
                         group_mapping[new_group] = existing_groups[0]
             
-            # Aplicar el mapeo donde sea necesario
+            # Apply the mapping where necessary
             for idx, row in df.iterrows():
                 if not row["is_reference"]:
                     temp_group = row[temp_group_column]
                     if temp_group in group_mapping:
-                        # Usar grupo existente mapeado
+                        # Use mapped existing group
                         df.at[idx, "group_number"] = group_mapping[temp_group]
                     elif temp_group != -1:
-                        # Crear nuevo grupo para clusters sin mapeo
-                        # Encontrar el máximo grupo existente y añadir 1
+                        # Create new group for clusters without mapping
+                        # Find the maximum existing group and add 1
                         if df["group_number"].notna().any():
                             max_group = df["group_number"].max()
                             if max_group is not None:
@@ -141,60 +141,85 @@ def agrupar_noticias(noticias_json):
                         else:
                             new_group_id = 0
                             
-                        # Asignar nuevo ID a todo el cluster
+                        # Assign new ID to the entire cluster
                         mask = (df[temp_group_column] == temp_group) & (~df["is_reference"])
                         df.loc[mask, "group_number"] = new_group_id
         else:
-            # Si no hay noticias de referencia, simplemente asignar los grupos de DBSCAN
+            # If there are no reference news, simply assign DBSCAN groups
             df["group_number"] = df[temp_group_column]
+            df.loc[df["group_number"] == -1, "group_number"] = None
         
-        # Nuevo post-procesamiento para eliminar duplicados por medio
+        # New post-processing to remove duplicates by medium
         result = []
         
-        # Procesar noticias por grupos
+        # Process news by groups
         for group in df["group_number"].unique():
             if pd.isna(group):
                 continue
                 
-            # Filtrar noticias de este grupo
+            # Filter news in this group
             group_df = df[df["group_number"] == group]
             
-            # Si solo hay una noticia en el grupo y no es de referencia, dejarla sin grupo
+            # If there's only one news item in the group and it's not a reference, leave it ungrouped
             if len(group_df) < 2 and not any(group_df["is_reference"]):
                 for _, row in group_df.iterrows():
-                    result.append({"id": row["id"], "group_number": None})
+                    result.append({
+                        "id": row["id"],
+                        "group_number": group,
+                        "title": row["title"],
+                        "description": row["description"],
+                        "source_medium": row["source_medium"]
+                    })
                 continue
             
-            # Rastrear medios ya vistos
+            # Track seen media
             seen_media = set()
             filtered_group = []
             
-            # Primero incluir las noticias de referencia
+            # First include reference news
             for _, row in group_df[group_df["is_reference"]].iterrows():
                 if row["source_medium"] not in seen_media:
                     seen_media.add(row["source_medium"])
                     filtered_group.append(row)
             
-            # Luego las noticias nuevas
+            # Then include new news
             for _, row in group_df[~group_df["is_reference"]].iterrows():
                 if row["source_medium"] not in seen_media:
                     seen_media.add(row["source_medium"])
                     filtered_group.append(row)
             
-            # Si quedan menos de 2 noticias después de eliminar duplicados, ignorar grupo
-            # excepto si ya hay noticias de referencia
+            # If there are fewer than 2 news items after removing duplicates, ignore group
+            # unless there are already reference news
             if len(filtered_group) < 2 and not any(row["is_reference"] for row in filtered_group):
                 for row in filtered_group:
-                    result.append({"id": row["id"], "group_number": None})
+                    result.append({
+                        "id": row["id"],
+                        "group_number": None,
+                        "title": row["title"],
+                        "description": row["description"],
+                        "source_medium": row["source_medium"]
+                    })
             else:
                 for row in filtered_group:
-                    result.append({"id": row["id"], "group_number": group})
+                    result.append({
+                        "id": row["id"],
+                        "group_number": group,
+                        "title": row["title"],
+                        "description": row["description"],
+                        "source_medium": row["source_medium"]
+                    })
         
-        # Incluir noticias que quedaron sin grupo (outliers)
+        # Include news that were left ungrouped (outliers)
         for _, row in df[pd.isna(df["group_number"])].iterrows():
-            result.append({"id": row["id"], "group_number": None})
+            result.append({
+                "id": row["id"],
+                "group_number": None,
+                "title": row["title"],
+                "description": row["description"],
+                "source_medium": row["source_medium"]
+            })
         
-        # Si no quedaron grupos con más de una noticia, asignar grupos individuales
+        # If no groups with more than one news item remain, assign individual groups
         if not any(r["group_number"] is not None for r in result):
             for i, r in enumerate(result):
                 r["group_number"] = i
@@ -203,6 +228,6 @@ def agrupar_noticias(noticias_json):
         return result
     
     except Exception as e:
-        print(f"❌ Error in agrupar_noticias: {str(e)}")
+        print(f"❌ Error in group_news: {str(e)}")
         traceback.print_exc()
         raise

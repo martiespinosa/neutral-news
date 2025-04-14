@@ -1,134 +1,230 @@
-import re
-import traceback
-from src.config import get_text_bison_model
+from openai import OpenAI
+import os, json
+from dotenv import load_dotenv
 
-def call_vertex_ai(prompt, max_length=512, temperature=0.4):
-    text_bison_model = get_text_bison_model()
+from src.storage import store_neutral_news, update_news_with_neutral_scores
+from .config import initialize_firebase
 
-    try:
-        response = text_bison_model.predict(
-            prompt,
-            max_output_tokens=max_length,
-            temperature=temperature,
-            top_k=40,
-            top_p=0.9,
-        )
-        generated_text = response.text
-        # Limpieza del texto
-        result_markers = ["Título neutral:", "Descripción neutral:", "Hechos objetivos:", "Versión corregida:", "Versión corregida neutral:"]
-        for marker in result_markers:
-            if marker in generated_text:
-                parts = generated_text.split(marker, 1)
-                if len(parts) > 1:
-                    generated_text = parts[1].strip()
-        generated_text = re.sub(r"Tu tarea es.*?:", "", generated_text)
-        generated_text = re.sub(r"Como redactor periodístico.*?:", "", generated_text)
-        return generated_text.strip()
-    except Exception as e:
-        print(f"Error calling Vertex AI: {str(e)}")
-        traceback.print_exc()
-        raise
+load_dotenv(".env.local")
 
-def neutralize_texts(texts, text_type):
-    if not texts or len(texts) == 0:
-        return "No se proporcionaron textos para procesar."
-    
-    texts = texts[:5]  # Limitar a 5 textos por grupo
-    cleaned_texts = [re.sub(r'<[^>]+>', '', text) for text in texts]
-    combined_texts = "\n\n".join([f"Texto {i+1}: {text[:500]}" for i, text in enumerate(cleaned_texts)])
-    
-    if text_type == "título":
-        prompt = f"""
-        Los siguientes son títulos periodísticos sobre el mismo tema:
+def neutralize_and_more(news_groups, batch_size=5):
+    """
+    Coordina el proceso de neutralización de grupos de noticias y actualiza Firestore.
+    Procesa los grupos en batches para optimizar las llamadas a la API.
+    """
+    if not news_groups:
+        print("No news groups to neutralize")
+        return 0
         
-        {combined_texts}
-        
-        Crea un nuevo título neutral y objetivo basado en estos textos. El título debe:
-        - Contener solo hechos verificables
-        - No incluir lenguaje valorativo
-        - Ser conciso (máximo 15 palabras)
-        - No usar adjetivos subjetivos
-        
-        Título neutral:
-        """
-        max_len = 128
-    else:  # descripción
-        prompt = f"""
-        Las siguientes son descripciones periodísticas sobre el mismo tema:
-        
-        {combined_texts}
-        
-        Crea una nueva descripción neutral y objetiva basada en estos textos. La descripción debe:
-        - Contener solo hechos verificables
-        - No incluir lenguaje valorativo o sesgado
-        - No usar adjetivos subjetivos
-        - Ser clara y concisa
-        
-        Descripción neutral:
-        """
-        max_len = 200
-    
-    try:
-        neutral_text = call_vertex_ai(prompt, max_length=max_len, temperature=0.3)
-        if len(neutral_text) >= 10 and not any(word in neutral_text.lower() for word in ["sesgada", "tu tarea", "revisar"]):
-            return neutral_text
-        return "No se pudo generar una versión neutral válida."
-    except Exception as e:
-        print(f"Error neutralizing {text_type}: {str(e)}")
-        return "Error al neutralizar el texto"
-
-def neutralize_news_groups(grouped_news, news_docs):
-    from datetime import datetime
-    from src.config import initialize_firebase
-    
-    db = initialize_firebase()
-    batch = db.batch()
     neutralized_count = 0
-    current_batch = 0
+    db = initialize_firebase()
     
-    groups = {}
-    for item in grouped_news:
-        group_num = item["group_number"]
-        if group_num is not None:
-            if group_num not in groups:
-                groups[group_num] = []
-            groups[group_num].append(item["id"])
+    try:
+        # Filtrar grupos que necesitan neutralización
+        groups_to_neutralize = []
+        
+        for group in news_groups:
+            group_number = group.get('group_number')
+            sources = group.get('sources', [])
+            
+            if not group_number or not sources or len(sources) < 2:
+                continue
+                
+            # Extraer los IDs de las noticias actuales
+            current_source_ids = [source.get('id') for source in sources if source.get('id')]
+            current_source_ids.sort()  # Ordenar para comparación consistente
+            
+            # Verificar si ya existe una neutralización para este grupo
+            neutral_doc_ref = db.collection('neutral_news').document(str(group_number))
+            neutral_doc = neutral_doc_ref.get()
+            
+            should_neutralize = True  # Por defecto, neutralizar
+            
+            if neutral_doc.exists:
+                # El grupo ya tiene una neutralización, verificar si ha cambiado
+                existing_data = neutral_doc.to_dict()
+                existing_source_ids = existing_data.get('source_ids', [])
+                
+                if existing_source_ids:
+                    existing_source_ids.sort()  # Ordenar para comparación consistente
+                    
+                    # Si los IDs son iguales, no es necesario volver a neutralizar
+                    if current_source_ids == existing_source_ids:
+                        print(f"Group {group_number} unchanged, skipping neutralization")
+                        should_neutralize = False
+            
+            if should_neutralize:
+                groups_to_neutralize.append({
+                    'group_number': group_number,
+                    'sources': sources,
+                    'source_ids': current_source_ids
+                })
+        
+        # Procesar en batches
+        for i in range(0, len(groups_to_neutralize), batch_size):
+            batch = groups_to_neutralize[i:i+batch_size]
+            
+            if batch:
+                results = generate_neutral_analysis_batch(batch)
+                
+                for result, group_info in zip(results, batch):
+                    if not result:
+                        continue
+                        
+                    group_number = group_info['group_number']
+                    sources = group_info['sources']
+                    source_ids = group_info['source_ids']
+                    
+                    # Guardar el resultado en la colección neutral_news con los IDs de fuente
+                    store_neutral_news(group_number, result, source_ids)
+                    
+                    # Actualizar las noticias originales con su puntuación de neutralidad
+                    update_news_with_neutral_scores(sources, result)
+                    
+                    neutralized_count += 1
+                    print(f"Neutralized group {group_number}")
+        
+        print(f"Neutralized and stored {neutralized_count} news groups")
+        return neutralized_count
+        
+    except Exception as e:
+        print(f"Error in neutralize_and_more: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return 0
     
-    for group_num, news_ids in groups.items():
-        if len(news_ids) < 2:
+def generate_neutral_analysis_batch(group_batch):
+    """
+    Genera análisis neutros para un batch de grupos de noticias usando la API de OpenAI.
+    """
+    if not group_batch:
+        return []
+        
+    results = []
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    
+    system_message = """
+    Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
+    de una misma noticia contada por diferentes medios. Tu tarea:
+    1. Generar un titular neutral.
+    2. Crear una descripción neutral.
+    3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Religión, Otros.
+    Devuelve solo un JSON con esta estructura (sin explicaciones):
+    {
+    "neutral_title": "...",
+    "neutral_description": "...",
+    "category": "...",
+    "source_ratings": [
+    {"source_medium": "...", "rating": 75},
+    ...
+    ]
+    }
+    """
+    
+    try:
+        # Preparar los mensajes para cada grupo
+        messages_list = []
+        
+        for group_info in group_batch:
+            sources = group_info.get('sources', [])
+            sources_text = ""
+            
+            for i, source in enumerate(sources):
+                if 'id' not in source or 'title' not in source or 'description' not in source or 'source_medium' not in source:
+                    continue
+                    
+                sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
+                sources_text += f"Titular: {source['title']}\n"
+                sources_text += f"Descripción: {source['description']}\n\n"
+                
+            if sources_text:
+                user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
+                messages_list.append([
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ])
+            else:
+                # Si no hay texto de fuentes válido, añadir None al resultado
+                results.append(None)
+                
+        # Realizar las llamadas a la API en paralelo
+        for messages in messages_list:
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                
+                result_json = json.loads(response.choices[0].message.content)
+                results.append(result_json)
+                
+            except Exception as e:
+                print(f"Error in API call: {str(e)}")
+                results.append(None)
+                
+        return results
+        
+    except Exception as e:
+        print(f"Error in generate_neutral_analysis_batch: {str(e)}")
+        return [None] * len(group_batch)
+
+def generate_neutral_analysis(sources):
+    """
+    Genera un análisis neutro de un grupo de noticias usando la API de OpenAI.
+    """
+    system_message = """
+    Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones 
+    de una misma noticia contada por diferentes medios. Tu tarea:
+    
+    1. Generar un titular neutral.
+    2. Crear una descripción neutral.
+    3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Religión, Otros.
+
+    Devuelve solo un JSON con esta estructura (sin explicaciones):
+    {
+        "neutral_title": "...",
+        "neutral_description": "...",
+        "category": "...",
+        "source_ratings": [
+            {"source_medium": "...", "rating": 75},
+            ...
+        ]
+    }
+    """
+
+    sources_text = ""
+    for i, source in enumerate(sources):
+        if 'id' not in source or 'title' not in source or 'description' not in source or 'source_medium' not in source:
             continue
-        
-        titles = []
-        descriptions = []
-        for news_id in news_ids:
-            if news_id in news_docs:
-                doc_data = news_docs[news_id].to_dict()
-                titles.append(doc_data["title"])
-                descriptions.append(doc_data["description"])
-        
-        neutral_title = neutralize_texts(titles, "título")
-        neutral_desc = neutralize_texts(descriptions, "descripción")
-        
-        group_ref = db.collection('neutralized_groups').document(str(group_num))
-        group_data = {
-            "group_number": int(group_num),
-            "news_ids": news_ids,
-            "neutral_title": neutral_title,
-            "neutral_description": neutral_desc,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        }
-        batch.set(group_ref, group_data, merge=True)
-        neutralized_count += 1
-        current_batch += 1
-        
-        if current_batch >= 450:
-            batch.commit()
-            batch = db.batch()
-            current_batch = 0
+        sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
+        sources_text += f"Titular: {source['title']}\n"
+        sources_text += f"Descripción: {source['description']}\n\n"
+
+    if not sources_text:
+        return None
+
+    user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
     
-    if current_batch > 0:
-        batch.commit()
+    try:
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+        
+        result_json = json.loads(response.choices[0].message.content)
+        return result_json
     
-    print(f"Neutralized and stored {neutralized_count} groups in Firestore")
-    return neutralized_count
+    except Exception as e:
+        print(f"Error in generate_neutral_analysis: {str(e)}")
+        return None
