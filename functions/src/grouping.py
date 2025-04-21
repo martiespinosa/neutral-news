@@ -56,7 +56,7 @@ def group_news(noticias_json):
         embeddings = model.encode(df["noticia_completa"].tolist(), convert_to_numpy=True)
                 
         # Parameters for clustering
-        eps = 0.24  # Distance threshold
+        eps = 0.25  # Distance threshold
         min_samples = 2  # Minimum number of samples in a cluster
         n_neighbors = min(5, len(df))  # Number of neighbors to consider
         

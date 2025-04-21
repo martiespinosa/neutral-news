@@ -97,7 +97,7 @@ def update_groups_in_firestore(grouped_news, news_docs):
             
             # Convertir a entero si no es None
             if new_group is not None:
-                new_group = int(new_group)
+                new_group = int(float(new_group))
                 
             # Solo actualizar si es necesario
             if current_group != new_group:                
@@ -156,6 +156,9 @@ def store_neutral_news(group_number, neutralization_result, source_ids):
     """
     try:
         db = initialize_firebase()
+
+        if group_number is not None:
+            group_number = int(float(group_number))
         
         neutral_news_ref = db.collection('neutral_news').document(str(group_number))
         neutral_news_data = {
@@ -164,6 +167,7 @@ def store_neutral_news(group_number, neutralization_result, source_ids):
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
             "created_at": datetime.now(),
+            "updated_at": datetime.now(),
             "source_ids": source_ids,
         }
         
@@ -173,6 +177,35 @@ def store_neutral_news(group_number, neutralization_result, source_ids):
         
     except Exception as e:
         print(f"Error in store_neutral_news: {str(e)}")
+        return False
+    
+def update_existing_neutral_news(group_number, neutralization_result, source_ids):
+    """
+    Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
+    """
+    try:
+        db = initialize_firebase()
+        
+        if group_number is not None:
+            group_number = int(float(group_number))
+        
+        neutral_news_ref = db.collection('neutral_news').document(str(group_number))
+        
+        # Actualizamos solo los campos necesarios, manteniendo otros metadatos
+        neutral_news_data = {
+            "neutral_title": neutralization_result.get("neutral_title"),
+            "neutral_description": neutralization_result.get("neutral_description"),
+            "category": neutralization_result.get("category"),
+            "updated_at": datetime.now(),
+            "source_ids": source_ids,
+        }
+        
+        neutral_news_ref.update(neutral_news_data)
+        print(f"Updated existing neutral news for group {group_number}")
+        return True
+        
+    except Exception as e:
+        print(f"Error in update_existing_neutral_news: {str(e)}")
         return False
 
 def delete_old_news(hours=72):

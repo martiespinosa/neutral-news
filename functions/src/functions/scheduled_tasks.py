@@ -52,36 +52,44 @@ def cleanup_old_news(event: scheduler_fn.ScheduledEvent) -> None:
     try:
         print("Starting old news deletion process...")
         
-        # Calculate the threshold for news older than 72 hours
-        time_threshold = datetime.now() - timedelta(hours=72)
+        # Calculate the threshold for news older than 7 days
+        time_threshold = datetime.now() - timedelta(hours=168)
         
         # Initialize Firestore
         db = initialize_firebase()
         
-        # Query for news older than 72 hours
-        old_news_query = db.collection('news').where('created_at', '<', time_threshold)
+        # Colecciones a limpiar
+        collections = ['news', 'neutral_news']
+        total_deleted = 0
         
-        # Get the documents
-        old_news_docs = list(old_news_query.stream())
-        
-        # Create a batch for deletion
-        batch = db.batch()
-        deleted_count = 0
-        
-        for doc in old_news_docs:
-            batch.delete(doc.reference)
-            deleted_count += 1
+        for collection_name in collections:
+            # Query for news older than 7 days
+            old_news_query = db.collection(collection_name).where('created_at', '<', time_threshold)
             
-            # Firebase has a limit of 500 operations per batch
-            if deleted_count % 450 == 0:
+            # Get the documents
+            old_news_docs = list(old_news_query.stream())
+            
+            # Create a batch for deletion
+            batch = db.batch()
+            deleted_count = 0
+            
+            for doc in old_news_docs:
+                batch.delete(doc.reference)
+                deleted_count += 1
+                
+                # Firebase has a limit of 500 operations per batch
+                if deleted_count % 450 == 0:
+                    batch.commit()
+                    batch = db.batch()
+            
+            # Commit any remaining deletions
+            if deleted_count % 450 != 0:
                 batch.commit()
-                batch = db.batch()
+            
+            print(f"Deleted {deleted_count} news items from {collection_name} older than 7 days")
+            total_deleted += deleted_count
         
-        # Commit any remaining deletions
-        if deleted_count % 450 != 0:
-            batch.commit()
-        
-        print(f"Deleted {deleted_count} news items older than 72 hours")
+        print(f"Total deleted: {total_deleted} news items older than 7 days")
         
     except Exception as e:
         print(f"Error in cleanup_old_news: {str(e)}")

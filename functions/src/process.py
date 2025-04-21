@@ -38,6 +38,7 @@ def prepare_groups_for_neutralization(grouped_news):
     for noticia in grouped_news:
         grupo = noticia.get("group_number")
         if grupo is not None:
+            grupo = int(float(grupo))
             grupos[grupo].append({
                 "id": noticia.get("id"),
                 "title": noticia.get("title"),

@@ -2,7 +2,7 @@ from openai import OpenAI
 import os, json
 from dotenv import load_dotenv
 
-from src.storage import store_neutral_news, update_news_with_neutral_scores
+from src.storage import store_neutral_news, update_news_with_neutral_scores, update_existing_neutral_news
 from .config import initialize_firebase
 
 load_dotenv(".env.local")
@@ -17,14 +17,21 @@ def neutralize_and_more(news_groups, batch_size=5):
         return 0
         
     neutralized_count = 0
+    updated_count = 0
     db = initialize_firebase()
     
     try:
         # Filtrar grupos que necesitan neutralización
         groups_to_neutralize = []
+        groups_to_update = []
         
         for group in news_groups:
             group_number = group.get('group_number')
+            if group_number is not None:
+            # Normalizar a entero
+                group_number = int(float(group_number))
+                group['group_number'] = group_number
+                
             sources = group.get('sources', [])
             
             if not group_number or not sources or len(sources) < 2:
@@ -38,8 +45,6 @@ def neutralize_and_more(news_groups, batch_size=5):
             neutral_doc_ref = db.collection('neutral_news').document(str(group_number))
             neutral_doc = neutral_doc_ref.get()
             
-            should_neutralize = True  # Por defecto, neutralizar
-            
             if neutral_doc.exists:
                 # El grupo ya tiene una neutralización, verificar si ha cambiado
                 existing_data = neutral_doc.to_dict()
@@ -51,16 +56,50 @@ def neutralize_and_more(news_groups, batch_size=5):
                     # Si los IDs son iguales, no es necesario volver a neutralizar
                     if current_source_ids == existing_source_ids:
                         print(f"Group {group_number} unchanged, skipping neutralization")
-                        should_neutralize = False
+                        continue
+                    else:
+                        # Los IDs son diferentes, necesitamos actualizar este documento existente
+                        print(f"Group {group_number} changed, will update existing neutral news")
+                        groups_to_update.append({
+                            'group_number': group_number,
+                            'sources': sources,
+                            'source_ids': current_source_ids,
+                            'existing_doc': existing_data
+                        })
+                        continue
             
-            if should_neutralize:
-                groups_to_neutralize.append({
-                    'group_number': group_number,
-                    'sources': sources,
-                    'source_ids': current_source_ids
-                })
+            # Si llegamos aquí, necesitamos crear un nuevo documento
+            groups_to_neutralize.append({
+                'group_number': group_number,
+                'sources': sources,
+                'source_ids': current_source_ids
+            })
         
-        # Procesar en batches
+        # Primero procesamos los grupos que necesitan actualización
+        for i in range(0, len(groups_to_update), batch_size):
+            batch = groups_to_update[i:i+batch_size]
+            
+            if batch:
+                results = generate_neutral_analysis_batch([g for g in batch])
+                
+                for result, group_info in zip(results, batch):
+                    if not result:
+                        continue
+                        
+                    group_number = group_info['group_number']
+                    sources = group_info['sources']
+                    source_ids = group_info['source_ids']
+                    
+                    # Actualizar el documento existente en neutral_news
+                    update_existing_neutral_news(group_number, result, source_ids)
+                    
+                    # Actualizar las noticias originales con su puntuación de neutralidad
+                    update_news_with_neutral_scores(sources, result)
+                    
+                    updated_count += 1
+                    print(f"Updated neutral news for group {group_number}")
+        
+        # Luego procesamos los grupos nuevos
         for i in range(0, len(groups_to_neutralize), batch_size):
             batch = groups_to_neutralize[i:i+batch_size]
             
@@ -82,10 +121,10 @@ def neutralize_and_more(news_groups, batch_size=5):
                     update_news_with_neutral_scores(sources, result)
                     
                     neutralized_count += 1
-                    print(f"Neutralized group {group_number}")
+                    print(f"Created neutral news for group {group_number}")
         
-        print(f"Neutralized and stored {neutralized_count} news groups")
-        return neutralized_count
+        print(f"Created {neutralized_count} and updated {updated_count} neutral news groups")
+        return neutralized_count + updated_count
         
     except Exception as e:
         print(f"Error in neutralize_and_more: {str(e)}")
@@ -109,7 +148,7 @@ def generate_neutral_analysis_batch(group_batch):
     1. Generar un titular neutral.
     2. Crear una descripción neutral.
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
-    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Religión, Otros.
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Otros.
     Devuelve solo un JSON con esta estructura (sin explicaciones):
     {
     "neutral_title": "...",
@@ -182,7 +221,7 @@ def generate_neutral_analysis(sources):
     1. Generar un titular neutral.
     2. Crear una descripción neutral.
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
-    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Religión, Otros.
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Otros.
 
     Devuelve solo un JSON con esta estructura (sin explicaciones):
     {

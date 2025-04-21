@@ -1,2 +1,5 @@
 *.local
 .env*
+venv/
+src/__pycache__/
+__pycache__/

@@ -11,3 +11,4 @@ functions-framework==3.*
 flask==2.*
 openai
 dotenv
+beautifulsoup4

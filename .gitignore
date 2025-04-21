@@ -76,3 +76,13 @@ functions/venv/
 functions/config/
 functions/__pychache__
 functions/*.toml
+functions/src/__pycache__/
+
+# Python-related files
+*.local
+venv/
+__pycache__/
+*.pyc
+*.pyo
+functions/__pycache__/main.cpython-312.pyc
+functions/src/__pycache__/models.cpython-312.pyc
