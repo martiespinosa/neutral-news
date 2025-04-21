@@ -15,16 +15,6 @@ final class ViewModel: NSObject {
     var filteredNews = [NeutralNews]()
     var groupsOfNews = [[News]]()
     var neutralNews = [NeutralNews]()
-    private var currentElement: String = ""
-    private var currentElementValue: String = ""
-    private var currentTitle: String = ""
-    private var currentDescription: String = ""
-    private var currentCategories: [String] = []
-    private var currentImageUrl: String = ""
-    private var currentLink: String = ""
-    private var currentPubDate: String = ""
-    private var currentNeutralScore: Int = 0
-    private var currentMedium: Media?
     
     var mediaFilter: Set<Media> = []
     var categoryFilter: Set<Category> = []
@@ -55,10 +45,10 @@ final class ViewModel: NSObject {
                 let data = doc.data()
                 guard let neutralTitle = data["neutral_title"] as? String,
                       let neutralDescription = data["neutral_description"] as? String,
-                      let group = data["group_number"] as? Int,
-                      let category = data["category"] as? String
-//                      let imageUrl = data["imageUrl"] as? String?,
-//                      let pubDate = data["pubDate"] as? String
+                      let group = data["group"] as? Int,
+                      let category = data["category"] as? String,
+                      let imageUrl = data["image_url"] as? String?
+//                      let pubDate = data["pub_date"] as? String
                 else {
                     print("Error parsing news document")
                     return nil
@@ -68,7 +58,7 @@ final class ViewModel: NSObject {
                     neutralTitle: neutralTitle,
                     neutralDescription: neutralDescription,
                     category: category,
-                    imageUrl: /*imageUrl ??*/ "",
+                    imageUrl: imageUrl,
 //                    pubDate: pubDate,
                     group: group
                 )
@@ -105,11 +95,11 @@ final class ViewModel: NSObject {
                       let description = data["description"] as? String,
                       let group = data["group"] as? Int?,
                       let category = data["category"] as? String?,
-                      let imageUrl = data["imageUrl"] as? String?,
+                      let imageUrl = data["image_url"] as? String?,
                       let link = data["link"] as? String,
-                      let pubDate = data["pubDate"] as? String,
+                      let pubDate = data["pub_date"] as? String,
                       let neutralScore = data["neutral_score"] as? Int?,
-                      let sourceMediumRaw = data["sourceMedium"] as? String,
+                      let sourceMediumRaw = data["source_medium"] as? String,
                       let sourceMedium = Media(rawValue: sourceMediumRaw) else {
                     print("Error parsing news document")
                     return nil

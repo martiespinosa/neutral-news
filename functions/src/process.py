@@ -36,7 +36,7 @@ def prepare_groups_for_neutralization(grouped_news):
     grupos = defaultdict(list)
 
     for noticia in grouped_news:
-        grupo = noticia.get("group_number")
+        grupo = noticia.get("group")
         if grupo is not None:
             grupo = int(float(grupo))
             grupos[grupo].append({
@@ -46,4 +46,4 @@ def prepare_groups_for_neutralization(grouped_news):
                 "source_medium": noticia.get("source_medium"),
             })
 
-    return [{"group_number": g, "sources": s} for g, s in grupos.items()]
+    return [{"group": g, "sources": s} for g, s in grupos.items()]

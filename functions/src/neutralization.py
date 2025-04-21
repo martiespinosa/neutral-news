@@ -25,16 +25,16 @@ def neutralize_and_more(news_groups, batch_size=5):
         groups_to_neutralize = []
         groups_to_update = []
         
-        for group in news_groups:
-            group_number = group.get('group_number')
+        for group in news_groups:   
+            group_number = group.get('group')
             if group_number is not None:
             # Normalizar a entero
                 group_number = int(float(group_number))
-                group['group_number'] = group_number
-                
+                group['group'] = group_number
+
             sources = group.get('sources', [])
             
-            if not group_number or not sources or len(sources) < 2:
+            if not group or not sources or len(sources) < 2:
                 continue
                 
             # Extraer los IDs de las noticias actuales
@@ -61,7 +61,7 @@ def neutralize_and_more(news_groups, batch_size=5):
                         # Los IDs son diferentes, necesitamos actualizar este documento existente
                         print(f"Group {group_number} changed, will update existing neutral news")
                         groups_to_update.append({
-                            'group_number': group_number,
+                            'group': group_number,
                             'sources': sources,
                             'source_ids': current_source_ids,
                             'existing_doc': existing_data
@@ -70,7 +70,7 @@ def neutralize_and_more(news_groups, batch_size=5):
             
             # Si llegamos aquí, necesitamos crear un nuevo documento
             groups_to_neutralize.append({
-                'group_number': group_number,
+                'group': group_number,
                 'sources': sources,
                 'source_ids': current_source_ids
             })
@@ -86,18 +86,18 @@ def neutralize_and_more(news_groups, batch_size=5):
                     if not result:
                         continue
                         
-                    group_number = group_info['group_number']
+                    group = group_info['group']
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
                     # Actualizar el documento existente en neutral_news
-                    update_existing_neutral_news(group_number, result, source_ids)
+                    update_existing_neutral_news(group, result, source_ids)
                     
                     # Actualizar las noticias originales con su puntuación de neutralidad
                     update_news_with_neutral_scores(sources, result)
                     
                     updated_count += 1
-                    print(f"Updated neutral news for group {group_number}")
+                    print(f"Updated neutral news for group {group}")
         
         # Luego procesamos los grupos nuevos
         for i in range(0, len(groups_to_neutralize), batch_size):
@@ -110,12 +110,12 @@ def neutralize_and_more(news_groups, batch_size=5):
                     if not result:
                         continue
                         
-                    group_number = group_info['group_number']
+                    group = group_info['group']
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
                     # Guardar el resultado en la colección neutral_news con los IDs de fuente
-                    store_neutral_news(group_number, result, source_ids)
+                    store_neutral_news(group, result, source_ids)
                     
                     # Actualizar las noticias originales con su puntuación de neutralidad
                     update_news_with_neutral_scores(sources, result)

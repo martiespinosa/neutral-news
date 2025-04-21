@@ -18,14 +18,13 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack {
                     ForEach(vm.filteredNews) { neutralNews in
-                        let imageUrl = vm.getRelatedNews(from: neutralNews).max(by: { $0.neutralScore ?? 0 < $1.neutralScore ?? 0 })?.imageUrl
                         NavigationLink {
-                            NeutralNewsView(news: neutralNews, imageUrl: imageUrl, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
+                            NeutralNewsView(news: neutralNews, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
                                 .navigationTransition(.zoom(sourceID: neutralNews.id, in: animationNamespace))
                         } label: {
-                                NewsImageView(news: neutralNews, imageUrl: imageUrl)
-                                    .padding(.vertical, 4)
-                                    .matchedTransitionSource(id: neutralNews.id, in: animationNamespace)
+                            NewsImageView(news: neutralNews, imageUrl: neutralNews.imageUrl)
+                                .padding(.vertical, 4)
+                                .matchedTransitionSource(id: neutralNews.id, in: animationNamespace)
                         }
                         .buttonStyle(.plain)
                     }

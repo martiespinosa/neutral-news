@@ -33,7 +33,7 @@ def fetch_all_rss():
     
     return all_news
 
-@https_fn.on_request(timeout_sec=300, memory=4096)
+# @https_fn.on_request(timeout_sec=300, memory=4096)
 def news_api(req: https_fn.Request) -> https_fn.Response:
     """
     HTTP function that handles various news-related operations:

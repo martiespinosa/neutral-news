@@ -47,10 +47,10 @@ class News:
             "title": self.title,
             "description": self.description,
             "category": self.category,
-            "imageUrl": self.image_url,
+            "image_url": self.image_url,
             "link": self.link,
-            "pubDate": self.pub_date,
-            "sourceMedium": self.source_medium,
+            "pub_date": self.pub_date,
+            "source_medium": self.source_medium,
             "group": self.group,
             "created_at": self.created_at
         }

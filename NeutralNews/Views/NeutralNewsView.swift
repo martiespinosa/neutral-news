@@ -10,7 +10,6 @@ import UIKit
 
 struct NeutralNewsView: View {
     let news: NeutralNews
-    let imageUrl: String?
     let relatedNews: [News]
     var namespace: Namespace.ID
     
@@ -36,7 +35,7 @@ struct NeutralNewsView: View {
                                 .fontWeight(.semibold)
                                 .fontDesign(.serif)
                             
-                            AsyncImage(url: URL(string: imageUrl ?? "")) { phase in
+                            AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
                                 switch phase {
                                 case .empty:
                                     ShimmerView()
@@ -135,5 +134,5 @@ struct NeutralNewsView: View {
 
 #Preview {
     let namespace = Namespace().wrappedValue
-    return NeutralNewsView(news: .mock, imageUrl: nil, relatedNews: [.mock, .mock, .mock], namespace: namespace)
+    return NeutralNewsView(news: .mock, relatedNews: [.mock, .mock, .mock], namespace: namespace)
 }

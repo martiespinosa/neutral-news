@@ -62,7 +62,7 @@ def get_news_for_grouping():
             "id": data["id"],
             "title": data["title"],
             "description": data["description"],
-            "source_medium": data["sourceMedium"]
+            "source_medium": data["source_medium"]
         }
         
         # Añadir grupo existente si lo tiene
@@ -93,7 +93,7 @@ def update_groups_in_firestore(grouped_news, news_docs):
             
             # Solo actualizar si la noticia no tenía grupo o si el grupo ha cambiado
             current_group = doc_data.get("group")
-            new_group = item.get("group_number")
+            new_group = item.get("group")
             
             # Convertir a entero si no es None
             if new_group is not None:
@@ -150,46 +150,59 @@ def update_news_with_neutral_scores(sources, neutralization_result):
         print(f"Error in update_news_with_neutral_scores: {str(e)}")
         return 0
 
-def store_neutral_news(group_number, neutralization_result, source_ids):
+def store_neutral_news(group, neutralization_result, source_ids):
     """
     Almacena el resultado de la neutralización en la colección neutral_news.
     """
     try:
         db = initialize_firebase()
 
-        if group_number is not None:
-            group_number = int(float(group_number))
+        if group is not None:
+            group = int(float(group))
+
+        image_url = get_most_neutral_image(
+            source_ids, 
+            neutralization_result.get("source_ratings", [])
+        )
         
-        neutral_news_ref = db.collection('neutral_news').document(str(group_number))
+        neutral_news_ref = db.collection('neutral_news').document(str(group))
         neutral_news_data = {
-            "group_number": group_number,
+            "group": group,
             "neutral_title": neutralization_result.get("neutral_title"),
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
+            "image_url": image_url,
             "source_ids": source_ids,
         }
         
         neutral_news_ref.set(neutral_news_data)
-        print(f"Stored neutral news for group {group_number}")
+        print(f"Stored neutral news for group {group}")
         return True
         
     except Exception as e:
         print(f"Error in store_neutral_news: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
     
-def update_existing_neutral_news(group_number, neutralization_result, source_ids):
+def update_existing_neutral_news(group, neutralization_result, source_ids):
     """
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
     """
     try:
         db = initialize_firebase()
         
-        if group_number is not None:
-            group_number = int(float(group_number))
+        if group is not None:
+            group = int(float(group))
+
+        image_url = get_most_neutral_image(
+            source_ids, 
+            neutralization_result.get("source_ratings", [])
+        )
         
-        neutral_news_ref = db.collection('neutral_news').document(str(group_number))
+        neutral_news_ref = db.collection('neutral_news').document(str(group))
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
         neutral_news_data = {
@@ -199,14 +212,117 @@ def update_existing_neutral_news(group_number, neutralization_result, source_ids
             "updated_at": datetime.now(),
             "source_ids": source_ids,
         }
+
+        if image_url:
+            neutral_news_data["image_url"] = image_url
         
         neutral_news_ref.update(neutral_news_data)
-        print(f"Updated existing neutral news for group {group_number}")
         return True
         
     except Exception as e:
         print(f"Error in update_existing_neutral_news: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
+    
+def get_most_neutral_image(source_ids, source_ratings):
+    """
+    Selecciona la imagen de la noticia más neutral que tenga imagen.
+    
+    Args:
+        source_ids: Lista de IDs de las noticias fuente
+        source_ratings: Lista de diccionarios con ratings de neutralidad por fuente
+        
+    Returns:
+        URL de la imagen más neutral, o None si ninguna noticia tiene imagen
+    """
+    try:
+        db = initialize_firebase()
+        
+        # Obtener las noticias originales
+        news_refs = [db.collection('news').document(news_id) for news_id in source_ids]
+        news_docs = [ref.get() for ref in news_refs]
+        
+        # Extraer datos de las noticias
+        news_data = []
+        for doc in news_docs:
+            if doc.exists:
+                data = doc.to_dict()
+                news_data.append({
+                    "id": data.get("id"),
+                    "source_medium": data.get("source_medium"),
+                    "image_url": data.get("image_url"),
+                    "neutral_score": None  # Lo llenaremos desde source_ratings
+                })
+        
+        # Asignar puntuaciones de neutralidad a cada noticia
+        for rating in source_ratings:
+            source_medium = rating.get("source_medium")
+            neutral_score = rating.get("rating")
+            
+            # Asignar la puntuación a la noticia correspondiente
+            for news in news_data:
+                if news["source_medium"] == source_medium:
+                    news["neutral_score"] = neutral_score
+        
+        # Filtrar noticias que tienen imagen
+        news_with_images = []
+        for news in news_data:
+            image_url = news.get("image_url")
+            if image_url and is_valid_image_url(image_url):
+                news_with_images.append(news)
+        
+        # Si no hay ninguna noticia con imagen, devolvemos None
+        if not news_with_images:
+            print("No news with images found in this group")
+            return None
+            
+        # Ordenar por puntuación de neutralidad (mayor a menor)
+        news_with_images.sort(key=lambda x: x.get("neutral_score", 0), reverse=True)
+        
+        # Tomar la URL de la imagen de la noticia más neutral
+        selected_news = news_with_images[0]
+        image_url = selected_news.get("image_url")
+        
+        return image_url
+        
+    except Exception as e:
+        print(f"Error in get_most_neutral_image: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+    
+def is_valid_image_url(url):
+    """
+    Verifica si la URL corresponde a una imagen y no a un video.
+    
+    Args:
+        url: URL del recurso a verificar
+        
+    Returns:
+        Boolean: True si es una imagen válida, False si no
+    """
+    if not url:
+        return False
+    
+    # Extensiones de imagen comunes
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']
+    # Extensiones de video comunes para excluir
+    video_extensions = ['.mp4', '.webm', '.avi', '.mov', '.wmv', '.flv', '.mkv']
+    
+    url_lower = url.lower()
+    
+    # Verificar si termina con extensión de imagen
+    is_image = any(url_lower.endswith(ext) for ext in image_extensions)
+    
+    # Verificar si termina con extensión de video
+    is_video = any(url_lower.endswith(ext) for ext in video_extensions)
+    
+    # También podemos buscar patrones en la URL que sugieran video
+    contains_video_pattern = 'video' in url_lower or 'player' in url_lower
+    
+    # Si la URL tiene una extensión de imagen y no parece ser un video
+    return is_image and not (is_video or contains_video_pattern)
 
 def delete_old_news(hours=72):
     """

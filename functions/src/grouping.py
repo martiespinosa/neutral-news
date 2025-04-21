@@ -16,13 +16,13 @@ def group_news(noticias_json):
             raise ValueError("The JSON must contain the columns 'id', 'title' and 'description' with the text of the news")
         
         # Prepare column for new groups
-        df["group_number"] = None
+        df["group"] = None
         
         # Preserve existing groups
         has_reference_news = "existing_group" in df.columns
         if has_reference_news:
-            # Copy existing groups to group_number
-            df.loc[df["existing_group"].notna(), "group_number"] = df.loc[df["existing_group"].notna(), "existing_group"]
+            # Copy existing groups to group
+            df.loc[df["existing_group"].notna(), "group"] = df.loc[df["existing_group"].notna(), "existing_group"]
             
             # Identify news that already have a group (references) and those that don't (to group)
             reference_mask = df["existing_group"].notna()
@@ -33,14 +33,14 @@ def group_news(noticias_json):
             
             # If all news already have a group, there's nothing to do
             if to_group_count == 0:
-                return df[["id", "group_number"]].to_dict(orient='records')
+                return df[["id", "group"]].to_dict(orient='records')
         else:
             df["is_reference"] = False
         
         # If there's only one news item to group, assign a new group
         if len(df[~df["is_reference"]]) <= 1 and not has_reference_news:
-            df.loc[~df["is_reference"], "group_number"] = 0
-            return df[["id", "group_number"]].to_dict(orient='records')
+            df.loc[~df["is_reference"], "group"] = 0
+            return df[["id", "group"]].to_dict(orient='records')
         
         # Generate embeddings
         print("ℹ️ Loading embeddings model...")
@@ -128,12 +128,12 @@ def group_news(noticias_json):
                     temp_group = row[temp_group_column]
                     if temp_group in group_mapping:
                         # Use mapped existing group
-                        df.at[idx, "group_number"] = group_mapping[temp_group]
+                        df.at[idx, "group"] = group_mapping[temp_group]
                     elif temp_group != -1:
                         # Create new group for clusters without mapping
                         # Find the maximum existing group and add 1
-                        if df["group_number"].notna().any():
-                            max_group = df["group_number"].max()
+                        if df["group"].notna().any():
+                            max_group = df["group"].max()
                             if max_group is not None:
                                 new_group_id = int(max_group) + 1
                             else:
@@ -143,29 +143,29 @@ def group_news(noticias_json):
                             
                         # Assign new ID to the entire cluster
                         mask = (df[temp_group_column] == temp_group) & (~df["is_reference"])
-                        df.loc[mask, "group_number"] = new_group_id
+                        df.loc[mask, "group"] = new_group_id
         else:
             # If there are no reference news, simply assign DBSCAN groups
-            df["group_number"] = df[temp_group_column]
-            df.loc[df["group_number"] == -1, "group_number"] = None
+            df["group"] = df[temp_group_column]
+            df.loc[df["group"] == -1, "group"] = None
         
         # New post-processing to remove duplicates by medium
         result = []
         
         # Process news by groups
-        for group in df["group_number"].unique():
+        for group in df["group"].unique():
             if pd.isna(group):
                 continue
                 
             # Filter news in this group
-            group_df = df[df["group_number"] == group]
+            group_df = df[df["group"] == group]
             
             # If there's only one news item in the group and it's not a reference, leave it ungrouped
             if len(group_df) < 2 and not any(group_df["is_reference"]):
                 for _, row in group_df.iterrows():
                     result.append({
                         "id": row["id"],
-                        "group_number": group,
+                        "group": group,
                         "title": row["title"],
                         "description": row["description"],
                         "source_medium": row["source_medium"]
@@ -194,7 +194,7 @@ def group_news(noticias_json):
                 for row in filtered_group:
                     result.append({
                         "id": row["id"],
-                        "group_number": None,
+                        "group": None,
                         "title": row["title"],
                         "description": row["description"],
                         "source_medium": row["source_medium"]
@@ -203,26 +203,26 @@ def group_news(noticias_json):
                 for row in filtered_group:
                     result.append({
                         "id": row["id"],
-                        "group_number": group,
+                        "group": group,
                         "title": row["title"],
                         "description": row["description"],
                         "source_medium": row["source_medium"]
                     })
         
         # Include news that were left ungrouped (outliers)
-        for _, row in df[pd.isna(df["group_number"])].iterrows():
+        for _, row in df[pd.isna(df["group"])].iterrows():
             result.append({
                 "id": row["id"],
-                "group_number": None,
+                "group": None,
                 "title": row["title"],
                 "description": row["description"],
                 "source_medium": row["source_medium"]
             })
         
         # If no groups with more than one news item remain, assign individual groups
-        if not any(r["group_number"] is not None for r in result):
+        if not any(r["group"] is not None for r in result):
             for i, r in enumerate(result):
-                r["group_number"] = i
+                r["group"] = i
 
         print("✅ Grouping completed successfully")
         return result
