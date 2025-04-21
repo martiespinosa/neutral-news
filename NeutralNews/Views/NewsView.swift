@@ -18,12 +18,15 @@ struct NewsView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom)
+//                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom)
+//                    .ignoresSafeArea()
+                
+                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.1)], startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // TODO: Dejar solo la Image cuando haya el logo de todos los medios
+                        // TODO: Pedir permiso para usar los logos de los medios?
                         if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
                             Image(uiImage: uiImage)
                                 .resizable()
@@ -33,7 +36,7 @@ struct NewsView: View {
                             Text(news.sourceMedium.pressMedia.name)
                                 .font(.title)
                                 .fontWeight(.semibold)
-                                .fontDesign(.serif)
+//                                .fontDesign(.serif)
                                 .foregroundColor(.secondary)
                         }
                         
@@ -64,11 +67,11 @@ struct NewsView: View {
                         .clipShape(.rect(cornerRadius: 16))
                         
                         Text(news.description)
-                            .fontDesign(.serif)
+//                            .fontDesign(.serif)
                         
                         if let link = URL(string: news.link) {
                             Link("Leer más en la fuente", destination: link)
-                                .fontDesign(.serif)
+//                                .fontDesign(.serif)
                         }
                         
                         Spacer()

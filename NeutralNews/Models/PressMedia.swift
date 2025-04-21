@@ -92,5 +92,4 @@ enum Category: String, CaseIterable, Decodable {
     case deportes = "Deportes"
     case internacional = "Internacional"
     case entretenimiento = "Entretenimiento"
-    case religion = "Religión"
 }

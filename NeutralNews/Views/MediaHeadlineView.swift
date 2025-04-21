@@ -12,7 +12,7 @@ struct MediaHeadlineView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // TODO: Dejar solo la Image cuando haya el logo de todos los medios
+            // TODO: Pedir permiso para usar los logos de los medios?
             if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
                 Image(uiImage: uiImage)
                     .resizable()
@@ -22,7 +22,7 @@ struct MediaHeadlineView: View {
                 Text(news.sourceMedium.pressMedia.name)
                     .font(.title2)
                     .fontWeight(.semibold)
-                    .fontDesign(.serif)
+//                    .fontDesign(.serif)
                     .foregroundColor(.secondary)
             }
             

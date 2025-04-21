@@ -58,7 +58,7 @@ struct NeutralNewsView: View {
                             .clipShape(.rect(cornerRadius: 16))
                             
                             Text(news.neutralDescription)
-                                .fontDesign(.serif)
+//                                .fontDesign(.serif)
                         }
                         .padding()
                         
