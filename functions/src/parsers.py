@@ -354,10 +354,10 @@ def fetch_all_rss():
     
     # Create a shared scraper instance with custom parameters
     scraper = NewsScraper(
-        min_word_threshold=30,      # RSS content shorter than this will trigger scraping
-        min_scraped_words=200,      # Minimum words for scraped content to be accepted
-        max_scraped_words=1500,     # Maximum words to keep from scraped content
-        request_timeout=15,         # Timeout for HTTP requests
+        min_word_threshold=25,      # RSS content shorter than this will trigger scraping
+        min_scraped_words=100,      # Minimum words for scraped content to be accepted
+        max_scraped_words=800,     # Maximum words to keep from scraped content
+        request_timeout=5,         # Timeout for HTTP requests
         domain_delay=1.5            # Seconds between requests to the same domain
     )
     

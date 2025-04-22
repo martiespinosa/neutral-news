@@ -8,23 +8,45 @@ class PressMedia:
 
 class Media:
     ABC = "abc"
-    EL_PAIS = "elPais"
+    ANTENA_3 = "antena3"
+    COPE = "cope"
+    DIARIO_RED = "diarioRed"
+    EL_DIARIO = "elDiario"
+    EL_ECONOMISTA = "elEconomista"
     EL_MUNDO = "elMundo"
-    LA_VANGUARDIA = "laVanguardia"
+    EL_PAIS = "elPais"
     EL_PERIODICO = "elPeriodico"
+    EL_SALTO = "elSalto"
+    ES_DIARIO = "esDiario"
+    EXPANSION = "expansion"
+    LA_SEXTA = "laSexta"
+    LA_VANGUARDIA = "laVanguardia"
+    LIBERTAD_DIGITAL = "libertadDigital"
+    RTVE = "rtve"
     
     @staticmethod
     def get_all():
-        return [Media.ABC, Media.EL_PAIS, Media.EL_MUNDO, Media.LA_VANGUARDIA, Media.EL_PERIODICO]
+        return [Media.ABC, Media.ANTENA_3, Media.COPE, Media.DIARIO_RED, Media.EL_DIARIO, Media.EL_ECONOMISTA, Media.EL_MUNDO, Media.EL_PAIS, Media.EL_PERIODICO, Media.EL_SALTO, Media.ES_DIARIO, Media.EXPANSION, Media.LA_SEXTA, Media.LA_VANGUARDIA, Media.LIBERTAD_DIGITAL, Media.RTVE]
     
     @staticmethod
     def get_press_media(medium):
         media_map = {
             Media.ABC: PressMedia("ABC", "https://www.abc.es/rss/2.0/portada/"),
-            Media.EL_PAIS: PressMedia("El País", "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"),
+            Media.ANTENA_3: PressMedia("Antena 3", "https://www.antena3.com/noticias/rss/4013050.xml"),
+            Media.COPE: PressMedia("COPE", "https://feeds2.feedburner.com/libertaddigital/portada"),
+            Media.DIARIO_RED: PressMedia("Diario Red", "https://www.diario-red.com/rss/"),
+            Media.EL_DIARIO: PressMedia("El Diario", "https://www.eldiario.es/rss/"),
+            Media.EL_ECONOMISTA: PressMedia("El Economista", "https://www.eleconomista.es/rss/rss-seleccion-ee.php"),
             Media.EL_MUNDO: PressMedia("El Mundo", "https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml"),
+            Media.EL_PAIS: PressMedia("El País", "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"),
+            Media.EL_PERIODICO: PressMedia("El Periódico", "https://www.elperiodico.com/es/cds/rss/?id=board.xml"),
+            Media.EL_SALTO: PressMedia("El Salto", "https://www.elsaltodiario.com/general/feed"),
+            Media.ES_DIARIO: PressMedia("ES Diario", "https://www.esdiario.com/rss/home.xml"),
+            Media.EXPANSION: PressMedia("Expansión", "https://e00-expansion.uecdn.es/rss/portada.xml"),
+            Media.LA_SEXTA: PressMedia("La Sexta", "https://www.lasexta.com/rss/351410.xml"),
             Media.LA_VANGUARDIA: PressMedia("La Vanguardia", "https://www.lavanguardia.com/rss/home.xml"),
-            Media.EL_PERIODICO: PressMedia("El Periódico", "https://www.elperiodico.com/es/cds/rss/?id=board.xml")
+            Media.LIBERTAD_DIGITAL: PressMedia("Libertad Digital", "https://feeds2.feedburner.com/libertaddigital/portada"),
+            Media.RTVE: PressMedia("RTVE", "https://api2.rtve.es/rss/temas_noticias.xml")
         }
         return media_map.get(medium)
 
