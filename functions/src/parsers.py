@@ -10,10 +10,25 @@ from bs4 import BeautifulSoup
 from newspaper import Article
 from urllib.robotparser import RobotFileParser
 from .models import News, Media
+import logging
 
 USER_AGENT = "NeutralNews/1.0 (+https://ezequielgaribotto.com/neutralnews)"
 
 thread_local = threading.local()
+
+class PrintHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record)
+        print(msg)
+
+def setup_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    handler = PrintHandler()
+    formatter = logging.Formatter('%(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
 
 class SafeSession(requests.Session):
     def __init__(self, robots_checker, *args, **kwargs):
@@ -24,7 +39,6 @@ class SafeSession(requests.Session):
         if not self.robots_checker.can_fetch(url):
             raise PermissionError(f"Blocked by robots.txt: {url}")
         return super().get(url, *args, **kwargs)
-
 
 
 class DomainRateLimiter:
@@ -70,8 +84,6 @@ class RobotsChecker:
             return True
         return rp.can_fetch(self.user_agent, url)
 
-robots_checker = RobotsChecker(user_agent=USER_AGENT)
-
 class NewsScraper:
     ERROR_PATTERNS = [
         r"404", r"página no encontrada", r"not found", r"no existe",
@@ -93,10 +105,9 @@ class NewsScraper:
         self.error_counts = defaultdict(int)
         self.stats = defaultdict(int)
         self.processed_articles = set()
-        self.logger = logging.getLogger(__name__)
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = setup_logger()
 
-    def get_session(self):
+    def get_session(self, robots_checker):
         if not hasattr(thread_local, "session"):
             session = SafeSession(robots_checker)
             session.headers.update({
@@ -137,13 +148,10 @@ class NewsScraper:
         cleaned = [s for s in sents if not any(term in s.lower() for term in ["cookie", "regist", "suscri", "privacidad"])]
         text = re.sub(r'\s+', ' ', ' '.join(cleaned)).strip()
         words = text.split()
-        return ' '.join(words[:self.max_scraped_words]) if len(words) > self.max_scraped_words else text
+        new_content  = ' '.join(words[:self.max_scraped_words]) if len(words) > self.max_scraped_words else text
+        return new_content
 
     def extract_with_newspaper(self, url):
-        if not robots_checker.can_fetch(url):
-            self.logger.info(f"Article from newspaper Scrap Method: Blocked by robots.txt: {url}")
-            self.error_counts["blocked_by_robots"] += 1
-            return ""
         try:
             art = Article(url, language='es')
             art.download()
@@ -167,18 +175,15 @@ class NewsScraper:
         ps = [p.get_text().strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 30]
         return self.clean_content(' '.join(ps)) if ps else ""
 
-    def needs_scraping(self, text):
-        return not text or len(text.split()) < self.min_word_threshold
+    def needs_scraping(self, desc_len):
+        return desc_len < self.min_word_threshold
 
-    def scrape_content(self, url):
+    def scrape_content(self, url, rss_content_len, sess):
         if not url:
             self.logger.warning("Empty URL provided.")
             self.error_counts["empty_url"] += 1
             return ""
-        if not robots_checker.can_fetch(url):
-            self.logger.info(f"Blocked by robots.txt: {url}")
-            self.error_counts["blocked_by_robots_ua"] += 1
-            return ""
+
         try:
             domain = self.get_domain(url)
             self.rate_limiter.wait(domain)
@@ -186,7 +191,6 @@ class NewsScraper:
             self.stats["requests_made"] += 1
             content = self.extract_with_newspaper(url)
             if not content:
-                sess = self.get_session()
                 r = sess.get(url, timeout=self.request_timeout)
                 if r.status_code != 200:
                     self.logger.warning(f"Non-200 HTTP status code {r.status_code} for {url}")
@@ -199,9 +203,24 @@ class NewsScraper:
                     return ""
                 soup = BeautifulSoup(txt, 'html.parser')
                 content = self.extract_fallback(soup)
-            if len(content.split()) < self.min_scraped_words or self.is_duplicate(content):
-                self.logger.info(f"Content too short or duplicate for {url}")
+
+            scr_content_length = len(content.split())
+
+            if self.is_duplicate(content):
+                self.logger.info(f"Duplicate content detected for {url}")
+                self.error_counts["duplicate_content"] += 1
                 return ""
+            
+            if scr_content_length < self.min_scraped_words:
+                if (scr_content_length < rss_content_len):
+                    self.logger.info(f"Scraped content shorter than RSS content for {url}")
+                    self.error_counts["shorter_scraped_content"] += 1
+                    return ""
+                else:
+                    self.logger.info(f"Content too short for {url}")
+                    self.error_counts["short_content"] += 1
+                    return content
+
             self.stats["successful_scrapes"] += 1
             self.logger.info(f"Successfully scraped content from {url}")
             return content
@@ -213,21 +232,28 @@ class NewsScraper:
             self.error_counts["scraping_error"] += 1
         return ""
 
-def normalize_string(s):
-    return s.lower().strip()
+
+def transform_utf8(text):
+    if not text:
+        return ""
+    try:
+        return text.encode('utf-8').decode('utf-8')
+    except UnicodeDecodeError:
+        return text
 
 def clean_html(html_content):
     if not html_content:
         return ""
     try:
-        return BeautifulSoup(html_content, 'html.parser').get_text(separator=' ', strip=True)
+        cleaned = BeautifulSoup(html_content, 'html.parser').get_text(separator=' ', strip=True)
+        cleaned = transform_utf8(cleaned)
+        return cleaned
     except:
         return html_content
 
-def parse_xml(data, medium, scraper=None):
-    if scraper is None:
-        scraper = NewsScraper()
+def parse_xml(data, medium, session, scraper, robots_checker):
     news_list = []
+
     try:
         root = ET.fromstring(data)
         ns = {'media': 'http://search.yahoo.com/mrss/'}
@@ -258,11 +284,21 @@ def parse_xml(data, medium, scraper=None):
                 except:
                     pass
             cat = cats[0] if cats else "sinCategoria"
-            scr_desc = desc
-            if scraper.needs_scraping(desc) and link:
-                scr = scraper.scrape_content(link)
-                if scr:
-                    scr_desc = scr
+            scr_desc = ""
+
+            desc_len = 0
+            if (desc):
+                desc_len = len(desc.split())
+
+            if scraper.needs_scraping(desc_len) and link:
+                if robots_checker.can_fetch(link):
+                    scr = scraper.scrape_content(link, len(desc), session)
+                    if scr != "":
+                        scr_desc = scr
+                else:
+                    scraper.logger.info(f"Blocked by robots.txt: {link}")
+                    scraper.error_counts["blocked_by_robots"] += 1
+
             item_obj = News(
                 title=title,
                 description=desc,
@@ -273,16 +309,23 @@ def parse_xml(data, medium, scraper=None):
                 pub_date=pub,
                 source_medium=medium
             )
-            if not any(n.link==item_obj.link for n in news_list):
+            for index, new in enumerate(news_list):
+                if new.link == item_obj.link and len(new.scraped_description) < item_obj.scraped_description:
+                    news_list[index] = item_obj
+                    scraper.logger.info(f"Updated existing news item with more recent scraped description: {item_obj.link}")
+                    break
+            else:
                 news_list.append(item_obj)
     except Exception as e:
-        logging.exception(f"Error parsing XML feed for medium {medium}: {e}")
+        scraper.logger.info(f"Error parsing XML feed for medium {medium}: {e}")
     return news_list
 
 def fetch_all_rss():
     all_news = []
     scraper = NewsScraper(min_word_threshold=25, min_scraped_words=100, max_scraped_words=800, request_timeout=5, domain_delay=1.5)
-    session = scraper.get_session()
+    robots_checker = RobotsChecker(user_agent=USER_AGENT)
+    session = scraper.get_session(robots_checker)
+
     for medium in Media.get_all():
         pm = Media.get_press_media(medium)
         if not pm:
@@ -290,8 +333,8 @@ def fetch_all_rss():
         try:
             r = session.get(pm.link, timeout=5)            
             r.raise_for_status()
-            news = parse_xml(r.text, medium, scraper)
+            news = parse_xml(r.text, medium, scraper, session, robots_checker)
             all_news.extend(news)
         except Exception as e:
-            logging.warning(f"Failed to fetch or parse feed from {pm.link}: {e}")
+            scraper.logger.warning(f"Failed to fetch or parse feed from {pm.link}: {e}")
     return all_news
