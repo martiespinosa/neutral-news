@@ -282,7 +282,7 @@ def parse_xml(data, medium, scraper=None):
 def fetch_all_rss():
     all_news = []
     scraper = NewsScraper(min_word_threshold=25, min_scraped_words=100, max_scraped_words=800, request_timeout=5, domain_delay=1.5)
-    session = scraper.get_session()  # ✅ Get it once
+    session = scraper.get_session()
     for medium in Media.get_all():
         pm = Media.get_press_media(medium)
         if not pm:

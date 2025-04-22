@@ -51,10 +51,11 @@ class Media:
         return media_map.get(medium)
 
 class News:
-    def __init__(self, title, description, category, image_url, link, pub_date, source_medium):
+    def __init__(self, title, description, scraped_description, category, image_url, link, pub_date, source_medium):
         self.id = str(uuid.uuid4())
         self.title = title
         self.description = description
+        self.scraped_description = scraped_description
         self.category = category
         self.image_url = image_url
         self.link = link
@@ -68,6 +69,7 @@ class News:
             "id": self.id,
             "title": self.title,
             "description": self.description,
+            "scraped_description": self.description,
             "category": self.category,
             "image_url": self.image_url,
             "link": self.link,
