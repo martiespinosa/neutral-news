@@ -48,7 +48,8 @@ final class ViewModel: NSObject {
                       let group = data["group"] as? Int,
                       let category = data["category"] as? String,
                       let imageUrl = data["image_url"] as? String?,
-                      let date = data["created_at"] as? Timestamp
+                      let createdAt = data["created_at"] as? Timestamp,
+                      let updatedAt = data["updated_at"] as? Timestamp
                 else {
                     print("Error parsing neutral news document")
                     return nil
@@ -59,13 +60,14 @@ final class ViewModel: NSObject {
                     neutralDescription: neutralDescription,
                     category: category,
                     imageUrl: imageUrl,
-                    date: date.dateValue(),
+                    createdAt: createdAt.dateValue(),
+                    updatedAt: updatedAt.dateValue(),
                     group: group
                 )
             }
             
             DispatchQueue.main.async {
-                self.neutralNews = fetchedNeutralNews
+                self.neutralNews = fetchedNeutralNews.sorted { $0.createdAt > $1.createdAt }
                 self.filterGroupedNews()
                 self.applyFilters()
             }
@@ -201,6 +203,14 @@ final class ViewModel: NSObject {
             
             return /*matchesMedia &&*/ matchesCategory
         }
+        
+        filteredNews.sort { $0.createdAt > $1.createdAt }
+    }
+    
+    func clearFilters() {
+        mediaFilter.removeAll()
+        categoryFilter.removeAll()
+        applyFilters()
     }
     
     func allCategories() -> Set<String> {

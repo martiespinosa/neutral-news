@@ -32,7 +32,7 @@ struct NeutralNewsView: View {
 //                                Spacer()
                                 Text(news.category.uppercased())
                                 Spacer()
-                                Text(news.date.formatted(.dateTime.day().month(.wide)).uppercased())
+                                Text(news.createdAt.formatted(.dateTime.day().month(.wide).hour().minute()).uppercased())
                             }
                             .font(.headline)
                             .foregroundStyle(.secondary)

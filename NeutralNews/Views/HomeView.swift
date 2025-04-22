@@ -79,9 +79,7 @@ struct HomeView: View {
             if vm.isAnyFilterEnabled {
                 Section {
                     Button("Limpiar Filtros", role: .destructive) {
-                        vm.mediaFilter.removeAll()
-                        vm.categoryFilter.removeAll()
-                        vm.filteredNews = vm.neutralNews
+                        vm.clearFilters()
                     }
                 }
             }

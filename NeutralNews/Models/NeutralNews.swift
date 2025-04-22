@@ -13,7 +13,8 @@ struct NeutralNews: Codable, Identifiable {
     let neutralDescription: String
     let category: String
     let imageUrl: String?
-    let date: Date
+    let createdAt: Date
+    let updatedAt: Date
     var group: Int
     
     static let mock = NeutralNews(
@@ -21,7 +22,8 @@ struct NeutralNews: Codable, Identifiable {
         neutralDescription: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
         category: "Category",
         imageUrl: nil,
-        date: .now,
+        createdAt: .now,
+        updatedAt: .now,
         group: 0
     )
 }

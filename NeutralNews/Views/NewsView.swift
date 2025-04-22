@@ -130,6 +130,30 @@ struct NewsView: View {
     }
 }
 
+struct JustifiedText: UIViewRepresentable {
+    let text: String
+    
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        textView.backgroundColor = .clear
+        return textView
+    }
+    
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .justified
+        
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .paragraphStyle: paragraphStyle
+        ]
+        
+        uiView.attributedText = NSAttributedString(string: text, attributes: attributes)
+    }
+}
+
 #Preview {
     let namespace = Namespace().wrappedValue
     return NewsView(news: .mock, relatedNews: [.mock, .mock, .mock], namespace: namespace)
