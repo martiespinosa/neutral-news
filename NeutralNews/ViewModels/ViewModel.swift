@@ -47,8 +47,8 @@ final class ViewModel: NSObject {
                       let neutralDescription = data["neutral_description"] as? String,
                       let group = data["group"] as? Int,
                       let category = data["category"] as? String,
-                      let imageUrl = data["image_url"] as? String?
-//                      let date = data["created_at"] as? String
+                      let imageUrl = data["image_url"] as? String?,
+                      let date = data["created_at"] as? Timestamp
                 else {
                     print("Error parsing neutral news document")
                     return nil
@@ -59,7 +59,7 @@ final class ViewModel: NSObject {
                     neutralDescription: neutralDescription,
                     category: category,
                     imageUrl: imageUrl,
-//                    date: date,
+                    date: date.dateValue(),
                     group: group
                 )
             }

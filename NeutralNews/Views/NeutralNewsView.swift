@@ -28,14 +28,14 @@ struct NeutralNewsView: View {
                     VStack {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {
-                                Text(news.category)
+//                                Label("Notícia neutral", systemImage: "sparkles")
+//                                Spacer()
+                                Text(news.category.uppercased())
                                 Spacer()
-//                                Text(news.date)
+                                Text(news.date.formatted(.dateTime.day().month(.wide)).uppercased())
                             }
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .fontDesign(.serif)
-                            .foregroundColor(.secondary)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
                             
                             Text(news.neutralTitle)
                                 .font(.title)
