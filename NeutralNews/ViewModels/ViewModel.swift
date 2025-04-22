@@ -48,9 +48,9 @@ final class ViewModel: NSObject {
                       let group = data["group"] as? Int,
                       let category = data["category"] as? String,
                       let imageUrl = data["image_url"] as? String?
-//                      let pubDate = data["pub_date"] as? String
+//                      let date = data["created_at"] as? String
                 else {
-                    print("Error parsing news document")
+                    print("Error parsing neutral news document")
                     return nil
                 }
                 
@@ -59,7 +59,7 @@ final class ViewModel: NSObject {
                     neutralDescription: neutralDescription,
                     category: category,
                     imageUrl: imageUrl,
-//                    pubDate: pubDate,
+//                    date: date,
                     group: group
                 )
             }
@@ -100,8 +100,11 @@ final class ViewModel: NSObject {
                       let pubDate = data["pub_date"] as? String,
                       let neutralScore = data["neutral_score"] as? Int?,
                       let sourceMediumRaw = data["source_medium"] as? String,
-                      let sourceMedium = Media(rawValue: sourceMediumRaw) else {
-                    print("Error parsing news document")
+                      let sourceMedium = Media(rawValue: sourceMediumRaw)
+                else {
+                    if let sourceMediumRaw = data["source_medium"] as? String {
+                        print("Error parsing news document from \(sourceMediumRaw)")
+                    }
                     return nil
                 }
                 

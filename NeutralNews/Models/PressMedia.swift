@@ -20,10 +20,18 @@ struct PressMedia: Codable, Equatable {
 
 enum Media: String, CaseIterable, Codable {
     case abc = "abc"
+    case antena3 = "antena3"
+    case cope = "cope"
+    case diarioRed = "diarioRed"
+    case elDiario = "elDiario"
+    case elEconomista = "elEconomista"
     case elMundo = "elMundo"
     case elPais = "elPais"
     case elPeriodico = "elPeriodico"
     case elSalto = "elSalto"
+    case esDiario = "esDiario"
+    case expansion = "expansion"
+    case laSexta = "laSexta"
     case laVanguardia = "laVanguardia"
     case libertadDigital = "libertadDigital"
     case rtve = "rtve"
@@ -33,6 +41,26 @@ enum Media: String, CaseIterable, Codable {
         case .abc: PressMedia(
             name: "ABC",
             link: "https://www.abc.es/rss/2.0/portada/"
+        )
+        case .antena3: PressMedia(
+            name: "Antena 3",
+            link: "https://www.antena3.com/noticias/rss/4013050.xml"
+        )
+        case .cope: PressMedia(
+            name: "COPE",
+            link: "https://feeds2.feedburner.com/libertaddigital/portada"
+        )
+        case .diarioRed: PressMedia(
+            name: "Diario Red",
+            link: "https://www.diario-red.com/rss/"
+        )
+        case .elDiario: PressMedia(
+            name: "El Diario",
+            link: "https://www.eldiario.es/rss/"
+        )
+        case .elEconomista: PressMedia(
+            name: "El Economista",
+            link: "https://www.eleconomista.es/rss/rss-seleccion-ee.php"
         )
         case .elMundo: PressMedia(
             name: "El Mundo",
@@ -49,6 +77,18 @@ enum Media: String, CaseIterable, Codable {
         case .elSalto: PressMedia(
             name: "El Salto",
             link: "https://www.elsaltodiario.com/general/feed"
+        )
+        case .esDiario: PressMedia(
+            name: "ES Diario",
+            link: "https://www.esdiario.com/rss/home.xml"
+        )
+        case .expansion: PressMedia(
+            name: "Expansión",
+            link: "https://e00-expansion.uecdn.es/rss/portada.xml"
+        )
+        case .laSexta: PressMedia(
+            name: "La Sexta",
+            link: "https://www.lasexta.com/rss/351410.xml"
         )
         case .laVanguardia: PressMedia(
             name: "La Vanguardia",

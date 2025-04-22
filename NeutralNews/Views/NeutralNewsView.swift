@@ -18,17 +18,24 @@ struct NeutralNewsView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom)
+//                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom)
+//                    .ignoresSafeArea()
+                
+                dominantColor
                     .ignoresSafeArea()
                 
                 ScrollView {
                     VStack {
                         VStack(alignment: .leading, spacing: 16) {
-//                            HStack {
-//                                Text(news.category)
-//                                Spacer()
-//                                Text(news.pubDate)
-//                            }
+                            HStack {
+                                Text(news.category)
+                                Spacer()
+//                                Text(news.date)
+                            }
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .fontDesign(.serif)
+                            .foregroundColor(.secondary)
                             
                             Text(news.neutralTitle)
                                 .font(.title)
