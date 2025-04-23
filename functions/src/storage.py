@@ -1,14 +1,12 @@
 from datetime import datetime, timedelta
 from .config import initialize_firebase
-from src.utils import is_valid_image_url
-
-db = initialize_firebase()
+from utils import is_valid_image_url
 
 def store_news_in_firestore(news_list):
     """
     Store news items in Firestore database
     """
-
+    db = initialize_firebase()
     batch = db.batch()
     news_count = 0
     current_batch = 0
@@ -42,6 +40,7 @@ def get_news_for_grouping():
     """
     Get news items for grouping process
     """
+    db = initialize_firebase()
     time_threshold = datetime.now() - timedelta(hours=24)
     
     # 1. Obtener noticias sin grupo (candidatas a ser agrupadas)
@@ -80,6 +79,7 @@ def update_groups_in_firestore(grouped_news, news_docs):
     """
     Update group assignments in Firestore
     """
+    db = initialize_firebase()
     batch = db.batch()
     updated_count = 0
     current_batch = 0
@@ -123,6 +123,7 @@ def update_news_with_neutral_scores(sources, neutralization_result):
     Actualiza las noticias originales con sus puntuaciones de neutralidad.
     """
     try:
+        db = initialize_firebase()
         batch = db.batch()
         updated_count = 0
         
@@ -156,6 +157,7 @@ def load_all_news_links_from_medium(medium):
     It prints the time it took to load the links.
     """
 
+    db = initialize_firebase()
     news_query = db.collection('news').where('source_medium', '==', medium)
     news_docs = list(news_query.stream())
     
@@ -174,6 +176,7 @@ def store_neutral_news(group, neutralization_result, source_ids):
     Almacena el resultado de la neutralización en la colección neutral_news.
     """
     try:
+        db = initialize_firebase()
 
         if group is not None:
             group = int(float(group))
@@ -210,6 +213,7 @@ def update_existing_neutral_news(group, neutralization_result, source_ids):
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
     """
     try:
+        db = initialize_firebase()
         
         if group is not None:
             group = int(float(group))
@@ -254,6 +258,7 @@ def get_most_neutral_image(source_ids, source_ratings):
         URL de la imagen más neutral, o None si ninguna noticia tiene imagen
     """
     try:
+        db = initialize_firebase()
         
         # Obtener las noticias originales
         news_refs = [db.collection('news').document(news_id) for news_id in source_ids]
@@ -308,11 +313,11 @@ def get_most_neutral_image(source_ids, source_ratings):
         traceback.print_exc()
         return None
 
-
 def delete_old_news(hours=72):
     """
     Delete news older than specified hours
     """
+    db = initialize_firebase()
     time_threshold = datetime.now() - timedelta(hours=hours)
     
     # Query for news older than threshold
