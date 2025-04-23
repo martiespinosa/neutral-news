@@ -33,7 +33,7 @@ class Media:
         media_map = {
             Media.ABC: PressMedia("ABC", "https://www.abc.es/rss/2.0/portada/"),
             Media.ANTENA_3: PressMedia("Antena 3", "https://www.antena3.com/noticias/rss/4013050.xml"),
-            Media.COPE: PressMedia("COPE", "https://feeds2.feedburner.com/libertaddigital/portada"),
+            Media.COPE: PressMedia("COPE", "https://www.cope.es/api/es/news/rss.xml"),
             Media.DIARIO_RED: PressMedia("Diario Red", "https://www.diario-red.com/rss/"),
             Media.EL_DIARIO: PressMedia("El Diario", "https://www.eldiario.es/rss/"),
             Media.EL_ECONOMISTA: PressMedia("El Economista", "https://www.eleconomista.es/rss/rss-seleccion-ee.php"),
@@ -51,10 +51,11 @@ class Media:
         return media_map.get(medium)
 
 class News:
-    def __init__(self, title, description, category, image_url, link, pub_date, source_medium):
+    def __init__(self, title, description, scraped_description, category, image_url, link, pub_date, source_medium):
         self.id = str(uuid.uuid4())
         self.title = title
         self.description = description
+        self.scraped_description = scraped_description
         self.category = category
         self.image_url = image_url
         self.link = link
@@ -68,6 +69,7 @@ class News:
             "id": self.id,
             "title": self.title,
             "description": self.description,
+            "scraped_description": self.description,
             "category": self.category,
             "image_url": self.image_url,
             "link": self.link,

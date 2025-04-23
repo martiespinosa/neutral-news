@@ -150,6 +150,26 @@ def update_news_with_neutral_scores(sources, neutralization_result):
         print(f"Error in update_news_with_neutral_scores: {str(e)}")
         return 0
 
+def load_all_news_links_from_medium(medium):
+    """
+    Carga todos los links de noticias de la colección 'news' en Firestore.
+    It prints the time it took to load the links.
+    """
+
+    db = initialize_firebase()
+    news_query = db.collection('news').where('source_medium', '==', medium)
+    news_docs = list(news_query.stream())
+    
+    news_links = []
+    for doc in news_docs:
+        data = doc.to_dict()
+        if data.get("link"):
+            news_links.append(data["link"])
+    
+    return news_links
+
+
+
 def store_neutral_news(group, neutralization_result, source_ids):
     """
     Almacena el resultado de la neutralización en la colección neutral_news.
