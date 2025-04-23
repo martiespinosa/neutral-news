@@ -1,6 +1,5 @@
 import traceback
 from collections import defaultdict
-
 from src.grouping import group_news
 from src.storage import get_news_for_grouping
 from src.storage import update_groups_in_firestore

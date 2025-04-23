@@ -35,17 +35,6 @@ def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
         traceback.print_exc()
         return None
 
-# @scheduler_fn.on_schedule(schedule="every 1 hours", memory=4096, timeout_sec=300)
-def group_news(event: scheduler_fn.ScheduledEvent) -> None:
-    try:
-        print("Starting scheduled news grouping...")
-        updated_count = process_news_groups()
-        print(f"Groups were updated for {updated_count} news")
-        return None
-    except Exception as e:
-        print(f"Error in group_news: {str(e)}")
-        traceback.print_exc()
-        return None
 
 @scheduler_fn.on_schedule(schedule="every 24 hours", memory=1024, timeout_sec=300)
 def cleanup_old_news(event: scheduler_fn.ScheduledEvent) -> None:
