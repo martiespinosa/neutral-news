@@ -74,6 +74,10 @@ struct NewsView: View {
 //                                .fontDesign(.serif)
                         }
                         
+                        Text("Neutral News no esta asociado a \(news.sourceMedium)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
                         Spacer()
                     }
                     .padding()
@@ -86,71 +90,6 @@ struct NewsView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
         }
-    }
-    
-    @MainActor
-    func getDominantColor(from urlString: String?) async -> Color {
-        guard let urlString = urlString, let url = URL(string: urlString) else { return .gray }
-        
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = UIImage(data: data), let cgImage = image.cgImage else { return .gray }
-            
-            let width = 10, height = 10
-            let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            )
-            
-            guard let context = context else { return .gray }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            
-            guard let data = context.data else { return .gray }
-            
-            var r = 0, g = 0, b = 0
-            let pixelCount = width * height
-            
-            for i in stride(from: 0, to: pixelCount * 4, by: 4) {
-                r += Int(data.load(fromByteOffset: i, as: UInt8.self))
-                g += Int(data.load(fromByteOffset: i + 1, as: UInt8.self))
-                b += Int(data.load(fromByteOffset: i + 2, as: UInt8.self))
-            }
-            
-            return Color(red: Double(r) / Double(255 * pixelCount),
-                         green: Double(g) / Double(255 * pixelCount),
-                         blue: Double(b) / Double(255 * pixelCount))
-        } catch {
-            return .gray
-        }
-    }
-}
-
-struct JustifiedText: UIViewRepresentable {
-    let text: String
-    
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.isEditable = false
-        textView.isScrollEnabled = false
-        textView.backgroundColor = .clear
-        return textView
-    }
-    
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .justified
-        
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .paragraphStyle: paragraphStyle
-        ]
-        
-        uiView.attributedText = NSAttributedString(string: text, attributes: attributes)
     }
 }
 
