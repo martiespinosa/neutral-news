@@ -5,7 +5,7 @@ import traceback
 from src.process import process_news_groups
 from src.storage import store_news_in_firestore
 from src.config import initialize_firebase
-from src.functions.news_api import fetch_all_rss
+from src.parsers import fetch_all_rss
 
 @scheduler_fn.on_schedule(schedule="every 4 hours", memory=4096, timeout_sec=540)
 def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:

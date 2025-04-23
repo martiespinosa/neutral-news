@@ -11,6 +11,7 @@ from newspaper import Article
 from urllib.robotparser import RobotFileParser
 from .models import News, Media
 import logging
+from src.storage import load_all_news_links_from_medium
 
 USER_AGENT = "NeutralNews/1.0 (+https://ezequielgaribotto.com/neutralnews)"
 
@@ -256,14 +257,17 @@ def parse_xml(data, medium, session, scraper, robots_checker):
 
     try:
         root = ET.fromstring(data)
+        all_news_links = load_all_news_links_from_medium(medium)
         ns = {'media': 'http://search.yahoo.com/mrss/'}
         for item in root.findall('.//item'):
+            link = l.text.strip() if l is not None and l.text else ""
+            if link in all_news_links:
+                continue
             t = item.find('title')
             title = clean_html(t.text) if t is not None and t.text else ""
             d = item.find('description')
             desc = clean_html(d.text) if d is not None and d.text else ""
             l = item.find('link')
-            link = l.text.strip() if l is not None and l.text else ""
             pd = item.find('pubDate')
             pub = pd.text.strip() if pd is not None and pd.text else ""
             cats = [clean_html(c.text) for c in item.findall('category') if c.text]

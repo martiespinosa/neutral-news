@@ -33,7 +33,7 @@ class Media:
         media_map = {
             Media.ABC: PressMedia("ABC", "https://www.abc.es/rss/2.0/portada/"),
             Media.ANTENA_3: PressMedia("Antena 3", "https://www.antena3.com/noticias/rss/4013050.xml"),
-            Media.COPE: PressMedia("COPE", "https://feeds2.feedburner.com/libertaddigital/portada"),
+            Media.COPE: PressMedia("COPE", "https://www.cope.es/api/es/news/rss.xml"),
             Media.DIARIO_RED: PressMedia("Diario Red", "https://www.diario-red.com/rss/"),
             Media.EL_DIARIO: PressMedia("El Diario", "https://www.eldiario.es/rss/"),
             Media.EL_ECONOMISTA: PressMedia("El Economista", "https://www.eleconomista.es/rss/rss-seleccion-ee.php"),
