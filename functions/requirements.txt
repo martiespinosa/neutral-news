@@ -13,3 +13,4 @@ openai
 dotenv
 beautifulsoup4
 newspaper3k
+newspaper

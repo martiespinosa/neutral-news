@@ -22,14 +22,14 @@ class PrintHandler(logging.Handler):
         msg = self.format(record)
         print(msg)
 
-def setup_logger():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    handler = PrintHandler()
-    formatter = logging.Formatter('%(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+class Logger:
+    def __init__(self, name):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        handler = PrintHandler()
+        formatter = logging.Formatter('%(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
 class SafeSession(requests.Session):
     def __init__(self, robots_checker, *args, **kwargs):
@@ -92,11 +92,6 @@ class NewsScraper:
         r"Esta funcionalidad es sólo para registrados",
     ]
 
-    GENERIC_PATTERNS = [
-        r"bienvenido", r"acerca de", r"quiénes somos", r"contacto", 
-        r"home", r"inicio", r"política de privacidad", r"aviso legal"
-    ]
-
     def __init__(self, min_word_threshold=30, min_scraped_words=200, max_scraped_words=2000, request_timeout=10, domain_delay=1.0):
         self.min_word_threshold = min_word_threshold
         self.min_scraped_words = min_scraped_words
@@ -106,7 +101,7 @@ class NewsScraper:
         self.error_counts = defaultdict(int)
         self.stats = defaultdict(int)
         self.processed_articles = set()
-        self.logger = setup_logger()
+        self.logger = Logger("PrintLogger")
 
     def get_session(self, robots_checker):
         if not hasattr(thread_local, "session"):
@@ -313,20 +308,14 @@ def parse_xml(data, medium, session, scraper, robots_checker):
                 pub_date=pub,
                 source_medium=medium
             )
-            for index, new in enumerate(news_list):
-                if new.link == item_obj.link and len(new.scraped_description) < item_obj.scraped_description:
-                    news_list[index] = item_obj
-                    scraper.logger.info(f"Updated existing news item with more recent scraped description: {item_obj.link}")
-                    break
-            else:
-                news_list.append(item_obj)
+            news_list.append(item_obj)
     except Exception as e:
         scraper.logger.info(f"Error parsing XML feed for medium {medium}: {e}")
     return news_list
 
 def fetch_all_rss():
     all_news = []
-    scraper = NewsScraper(min_word_threshold=25, min_scraped_words=100, max_scraped_words=800, request_timeout=5, domain_delay=1.5)
+    scraper = NewsScraper(min_word_threshold=100, min_scraped_words=100, max_scraped_words=800, request_timeout=5, domain_delay=1.5)
     robots_checker = RobotsChecker(user_agent=USER_AGENT)
     session = scraper.get_session(robots_checker)
 
