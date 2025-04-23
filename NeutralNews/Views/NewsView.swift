@@ -74,11 +74,11 @@ struct NewsView: View {
 //                                .fontDesign(.serif)
                         }
                         
-                        Text("Neutral News no esta asociado a \(news.sourceMedium)")
+                        Spacer()
+                        
+                        Text("Neutral News es independiente, no esta asociado a \(news.sourceMedium) ni ningún otro medio de comunicación.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        
-                        Spacer()
                     }
                     .padding()
                     .frame(minHeight: geometry.size.height)
