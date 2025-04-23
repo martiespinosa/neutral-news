@@ -5,7 +5,7 @@ import threading
 import time
 import logging
 from urllib.parse import urlparse
-from collections import defaultdict
+from collections import defaultdict  
 from bs4 import BeautifulSoup
 from newspaper import Article
 from urllib.robotparser import RobotFileParser
@@ -13,8 +13,7 @@ from .models import News, Media
 import logging
 from src.storage import load_all_news_links_from_medium
 
-USER_AGENT = "NeutralNews/1.0 (+https://ezequielgaribotto.com/neutralnews)"
-
+USER_AGENT = "NeutralNews/1.0 (+https://ezequielgaribotto.com)"
 thread_local = threading.local()
 
 class PrintHandler(logging.Handler):
@@ -247,7 +246,7 @@ def clean_html(html_content):
     except:
         return html_content
 
-def parse_xml(data, medium, session, scraper, robots_checker):
+def parse_xml(data, medium, scraper, session, robots_checker):
     news_list = []
 
     try:
@@ -255,6 +254,7 @@ def parse_xml(data, medium, session, scraper, robots_checker):
         all_news_links = load_all_news_links_from_medium(medium)
         ns = {'media': 'http://search.yahoo.com/mrss/'}
         for item in root.findall('.//item'):
+            l = item.find('link')
             link = l.text.strip() if l is not None and l.text else ""
             if link in all_news_links:
                 continue
@@ -262,7 +262,6 @@ def parse_xml(data, medium, session, scraper, robots_checker):
             title = clean_html(t.text) if t is not None and t.text else ""
             d = item.find('description')
             desc = clean_html(d.text) if d is not None and d.text else ""
-            l = item.find('link')
             pd = item.find('pubDate')
             pub = pd.text.strip() if pd is not None and pd.text else ""
             cats = [clean_html(c.text) for c in item.findall('category') if c.text]
