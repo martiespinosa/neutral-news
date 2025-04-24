@@ -1,6 +1,58 @@
-import numpy as np
-import pandas as pd
+import os
 import traceback
+
+# Define a global model variable 
+_model = None
+_nlp_modules_loaded = False
+
+def _load_nlp_modules():
+    """Lazily import NLP-related modules to speed up cold starts"""
+    global _nlp_modules_loaded
+    if not _nlp_modules_loaded:
+        global np, pd, SentenceTransformer, NearestNeighbors, lil_matrix, DBSCAN
+        
+        import numpy as np
+        import pandas as pd
+        from sentence_transformers import SentenceTransformer
+        from sklearn.neighbors import NearestNeighbors
+        from scipy.sparse import lil_matrix
+        from sklearn.cluster import DBSCAN
+        
+        _nlp_modules_loaded = True
+
+def get_sentence_transformer_model(retry_count=3):
+    """Get or initialize the sentence transformer model with retries"""
+    _load_nlp_modules()
+    
+    global _model
+    if _model is None:
+        for attempt in range(retry_count):
+            try:
+                # Check if we're in a Cloud Function environment
+                if os.getenv("FUNCTION_TARGET"):
+                    # Use a path within /tmp which is writable in Cloud Functions
+                    cache_dir = "/tmp/sentence_transformers_cache"
+                    os.makedirs(cache_dir, exist_ok=True)
+                    
+                    # Try to load the model with caching
+                    _model = SentenceTransformer(
+                        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                        cache_folder=cache_dir
+                    )
+                else:
+                    # Local development environment - normal loading
+                    _model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+                break  # Success! Exit retry loop
+            except OSError as e:
+                if attempt == retry_count - 1:  # If this was the last attempt
+                    raise RuntimeError(
+                        f"Failed to download the model after {retry_count} attempts: {str(e)}"
+                    )
+                print(f"Model download failed, retrying ({attempt+1}/{retry_count})...")
+                import time
+                time.sleep(2 ** attempt)  # Exponential backoff
+    
+    return _model
 
 def group_news(noticias_json):
     """
@@ -8,6 +60,9 @@ def group_news(noticias_json):
     """
     try:
         print("ℹ️ Starting news grouping...")
+        # Load NLP modules when needed, not at import time
+        _load_nlp_modules()
+        
         # Convert to DataFrame
         df = pd.DataFrame(noticias_json)
                 
@@ -44,13 +99,12 @@ def group_news(noticias_json):
         
         # Generate embeddings
         print("ℹ️ Loading embeddings model...")
-        from sentence_transformers import SentenceTransformer
         
         # Concatenate 'title' and 'description' into a new column 'noticia_completa'
         df["noticia_completa"] = df["title"].fillna("") + " " + df["description"].fillna("")
         
-        model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", 
-                                    cache_folder="/tmp/sentence_transformers")
+        # Get model with retry support
+        model = get_sentence_transformer_model()
         
         print("ℹ️ Generating embeddings...")
         embeddings = model.encode(df["noticia_completa"].tolist(), convert_to_numpy=True)
@@ -67,9 +121,6 @@ def group_news(noticias_json):
         embeddings_norm = embeddings / norms
         
         print("ℹ️ Calculating nearest neighbors...")
-        from sklearn.neighbors import NearestNeighbors
-        from scipy.sparse import lil_matrix
-        from sklearn.cluster import DBSCAN
         
         # Nearest neighbors model
         nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(embeddings_norm)

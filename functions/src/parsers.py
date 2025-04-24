@@ -12,6 +12,7 @@ from urllib.robotparser import RobotFileParser
 from .models import News, Media
 import logging
 from src.storage import load_all_news_links_from_medium
+import concurrent.futures
 
 USER_AGENT = "NeutralNews/1.0 (+https://ezequielgaribotto.com)"
 thread_local = threading.local()
@@ -24,11 +25,32 @@ class PrintHandler(logging.Handler):
 class Logger:
     def __init__(self, name):
         self.logger = logging.getLogger(name)
+        self.logger.handlers = []
+        self.logger.propagate = False
+        
         self.logger.setLevel(logging.DEBUG)
         handler = PrintHandler()
         formatter = logging.Formatter('%(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
+    
+    def debug(self, msg, *args, **kwargs):
+        self.logger.debug(msg, *args, **kwargs)
+        
+    def info(self, msg, *args, **kwargs):
+        self.logger.info(msg, *args, **kwargs)
+        
+    def warning(self, msg, *args, **kwargs):
+        self.logger.warning(msg, *args, **kwargs)
+        
+    def error(self, msg, *args, **kwargs):
+        self.logger.error(msg, *args, **kwargs)
+        
+    def critical(self, msg, *args, **kwargs):
+        self.logger.critical(msg, *args, **kwargs)
+        
+    def exception(self, msg, *args, **kwargs):
+        self.logger.exception(msg, *args, **kwargs)
 
 class SafeSession(requests.Session):
     def __init__(self, robots_checker, *args, **kwargs):
@@ -65,7 +87,7 @@ class RobotsChecker:
         self.timeout = timeout
 
     def _get_parser(self, base_url):
-        if base_url in self.parsers:
+        if (base_url in self.parsers) and (self.parsers[base_url] is not None):
             return self.parsers[base_url]
         rp = RobotFileParser()
         rp.set_url(base_url.rstrip('/') + '/robots.txt')
@@ -124,7 +146,7 @@ class NewsScraper:
             return True
         h = hash(content)
         if h in self.processed_articles:
-            self.logger.debug("Duplicate content detected.")
+            self.logger.warning("Duplicate content detected.")
             self.error_counts["duplicate_content"] += 1
             return True
         self.processed_articles.add(h)
@@ -149,31 +171,19 @@ class NewsScraper:
     def extract_with_newspaper(self, url):
         try:
             art = Article(url, language='es')
+            art.config.browser_user_agent = USER_AGENT
             art.download()
             art.parse()
             t = self.clean_content(art.text)
-            if len(t.split()) >= self.min_scraped_words:
-                self.logger.info(f"Article successfully extracted via Newspaper3k: {url}")
-                return t
+            return t
         except Exception as e:
             self.logger.warning(f"Newspaper3k failed for {url}: {e}")
         return ""
 
-    def extract_fallback(self, soup):
-        for sel in ['article', '.article-body', '.content', '.entry-content', 'main', '#main-content']:
-            c = soup.select_one(sel)
-            if c:
-                ps = [p.get_text().strip() for p in c.find_all('p') if len(p.get_text().strip()) > 30]
-                if ps:
-                    self.logger.debug(f"Extracted content using fallback selector {sel}.")
-                    return self.clean_content(' '.join(ps))
-        ps = [p.get_text().strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 30]
-        return self.clean_content(' '.join(ps)) if ps else ""
-
     def needs_scraping(self, desc_len):
         return desc_len < self.min_word_threshold
 
-    def scrape_content(self, url, rss_content_len, sess):
+    def scrape_content(self, url):
         if not url:
             self.logger.warning("Empty URL provided.")
             self.error_counts["empty_url"] += 1
@@ -182,48 +192,33 @@ class NewsScraper:
         try:
             domain = self.get_domain(url)
             self.rate_limiter.wait(domain)
-            self.logger.debug(f"Fetching content from {url}")
             self.stats["requests_made"] += 1
             content = self.extract_with_newspaper(url)
             if not content:
-                r = sess.get(url, timeout=self.request_timeout)
-                if r.status_code != 200:
-                    self.logger.warning(f"Non-200 HTTP status code {r.status_code} for {url}")
-                    self.error_counts[f"http_{r.status_code}"] += 1
-                    return ""
-                txt = r.text
-                if self.contains_error_message(txt):
-                    self.logger.warning(f"Error pattern detected in page content: {url}")
-                    self.error_counts["error_page"] += 1
-                    return ""
-                soup = BeautifulSoup(txt, 'html.parser')
-                content = self.extract_fallback(soup)
+                return ""
 
-            scr_content_length = len(content.split())
+
 
             if self.is_duplicate(content):
-                self.logger.info(f"Duplicate content detected for {url}")
+                self.logger.warning(f"Duplicate content detected for {url}")
                 self.error_counts["duplicate_content"] += 1
                 return ""
             
+            scr_content_length = len(content.split())
             if scr_content_length < self.min_scraped_words:
-                if (scr_content_length < rss_content_len):
-                    self.logger.info(f"Scraped content shorter than RSS content for {url}")
-                    self.error_counts["shorter_scraped_content"] += 1
-                    return ""
-                else:
-                    self.logger.info(f"Content too short for {url}")
-                    self.error_counts["short_content"] += 1
-                    return content
+                self.logger.warning(f"Content too short ({scr_content_length} words) for {url}, minimum required: {self.min_scraped_words}")
+                self.error_counts["short_content"] += 1
+                
+                return ""
 
+            # If we got here, content is long enough
             self.stats["successful_scrapes"] += 1
-            self.logger.info(f"Successfully scraped content from {url}")
             return content
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Request error for {url}: {e}")
             self.error_counts["request_error"] += 1
         except Exception as e:
-            self.logger.exception(f"Unexpected error scraping {url}: {e}")
+            self.logger.warning(f"Unexpected error scraping {url}: {e}")
             self.error_counts["scraping_error"] += 1
         return ""
 
@@ -246,18 +241,47 @@ def clean_html(html_content):
     except:
         return html_content
 
-def parse_xml(data, medium, scraper, session, robots_checker):
+def process_feed_items_parallel(items, medium, scraper, robots_checker, max_workers=5):
     news_list = []
-
-    try:
-        root = ET.fromstring(data)
-        all_news_links = load_all_news_links_from_medium(medium)
-        ns = {'media': 'http://search.yahoo.com/mrss/'}
-        for item in root.findall('.//item'):
+    
+    # Get all existing links from the database for this medium
+    scraper.logger.info(f"Loading existing links for {medium}...")
+    all_news_links = load_all_news_links_from_medium(medium)
+    scraper.logger.info(f"Found {len(all_news_links)} existing links for {medium}")
+    
+    # Normalize all links for better comparison
+    all_news_links_normalized = set()
+    for link in all_news_links:
+        if link:
+            # Normalize links to handle http/https differences
+            normalized = link.lower().replace("http://", "").replace("https://", "").rstrip("/")
+            all_news_links_normalized.add(normalized)
+    
+    ns = {'media': 'http://search.yahoo.com/mrss/'}
+    
+    def process_item(item):
+        try:
             l = item.find('link')
             link = l.text.strip() if l is not None and l.text else ""
-            if link in all_news_links:
-                continue
+            
+            # Skip empty links
+            if not link:
+                return None
+            
+            # Normalize the current link for comparison
+            normalized_link = link.lower().replace("http://", "").replace("https://", "").rstrip("/")
+            
+            # Check if link already exists in database using normalized comparison
+            if normalized_link in all_news_links_normalized:
+                process_item.skipped_count += 1
+                return None
+                
+            # Add article counter for those being processed (not skipped)
+            process_item.current_count += 1
+            total_items = len(items)
+            scraper.logger.info(f"Processing article {process_item.current_count}/{total_items} from {medium}")
+            
+            # Rest of your processing code...
             t = item.find('title')
             title = clean_html(t.text) if t is not None and t.text else ""
             d = item.find('description')
@@ -284,30 +308,56 @@ def parse_xml(data, medium, scraper, session, robots_checker):
             cat = cats[0] if cats else "sinCategoria"
             scr_desc = ""
 
-            desc_len = 0
-            if (desc):
-                desc_len = len(desc.split())
+            desc_len = len(desc.split()) if desc else 0
 
             if scraper.needs_scraping(desc_len) and link:
                 if robots_checker.can_fetch(link):
-                    scr = scraper.scrape_content(link, len(desc), session)
-                    if scr != "":
-                        scr_desc = scr
+                    scr_desc = scraper.scrape_content(link)
+                    scraper.logger.info(f"Scraped description for article {process_item.current_count}/{total_items} from {medium}")
                 else:
-                    scraper.logger.info(f"Blocked by robots.txt: {link}")
+                    scraper.logger.warning(f"Blocked by robots.txt: {link}")
                     scraper.error_counts["blocked_by_robots"] += 1
 
-            item_obj = News(
+            return News(
                 title=title,
                 description=desc,
-                scraped_description=scr_desc,
+                scraped_description=scr_desc if scr_desc != "" else desc,
                 category=cat,
                 image_url=img,
                 link=link,
                 pub_date=pub,
                 source_medium=medium
             )
-            news_list.append(item_obj)
+        except Exception as e:
+            scraper.logger.warning(f"Error processing item: {e}")
+            return None
+
+    # Initialize counters
+    process_item.current_count = 0
+    process_item.skipped_count = 0
+    
+    # Process items in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(process_item, item) for item in items]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                news_list.append(result)
+    
+    # Log statistics
+    scraper.logger.info(f"Processed {process_item.current_count} new articles from {medium}")
+    scraper.logger.info(f"Skipped {process_item.skipped_count} duplicate articles from {medium}")
+    
+    return news_list
+
+def parse_xml(data, medium, scraper, robots_checker):
+    news_list = []
+    try:
+        root = ET.fromstring(data)
+        items = list(root.findall('.//item'))
+        scraper.logger.info(f"Found {len(items)} items in feed for {medium}")
+        
+        return process_feed_items_parallel(items, medium, scraper, robots_checker)
     except Exception as e:
         scraper.logger.info(f"Error parsing XML feed for medium {medium}: {e}")
     return news_list
@@ -317,15 +367,19 @@ def fetch_all_rss():
     scraper = NewsScraper(min_word_threshold=100, min_scraped_words=100, max_scraped_words=800, request_timeout=5, domain_delay=1.5)
     robots_checker = RobotsChecker(user_agent=USER_AGENT)
     session = scraper.get_session(robots_checker)
+    total_media = len(list(Media.get_all()))
 
     for medium in Media.get_all():
         pm = Media.get_press_media(medium)
+        media_count = list(Media.get_all()).index(medium) + 1
+        
+        scraper.logger.info(f"Fetching RSS feed for medium {medium} ({media_count}/{total_media})...")
         if not pm:
             continue
         try:
             r = session.get(pm.link, timeout=5)            
             r.raise_for_status()
-            news = parse_xml(r.text, medium, scraper, session, robots_checker)
+            news = parse_xml(r.text, medium, scraper, robots_checker)
             all_news.extend(news)
         except Exception as e:
             scraper.logger.warning(f"Failed to fetch or parse feed from {pm.link}: {e}")
