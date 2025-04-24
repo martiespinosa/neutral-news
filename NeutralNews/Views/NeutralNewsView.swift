@@ -94,6 +94,15 @@ struct NeutralNewsView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    // TODO: Cambiar el link a Neutral News
+                    ShareLink(item: URL(string: "https://www.apple.com")!) {
+                        Label("Compartir", systemImage: "square.and.arrow.up")
+                    }
+
+                }
+            }
         }
     }
 }
