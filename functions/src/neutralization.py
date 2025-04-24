@@ -172,11 +172,14 @@ def generate_neutral_analysis_batch(group_batch):
             for i, source in enumerate(sources):
                 if 'id' not in source or 'title' not in source or 'scraped_description' not in source or 'source_medium' not in source:
                     continue
-                    
+
                 sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
                 sources_text += f"Titular: {source['title']}\n"
-                sources_text += f"Descripción: {source['scraped_description']}\n\n"
-                
+                if source['scraped_description'] == "":
+                    sources_text += f"Descripción: {source['description']}\n\n"
+                else:
+                    sources_text += f"Descripción: {source['scraped_description']}\n\n"
+                    
             if sources_text:
                 user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
                 messages_list.append([

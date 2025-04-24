@@ -158,24 +158,13 @@ class NewsScraper:
         t = text.lower()
         return any(re.search(p, t) for p in self.ERROR_PATTERNS)
 
-    def clean_content(self, content):
-        if not content:
-            return ""
-        sents = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)?(?<=\.|\?)\s', content)
-        cleaned = [s for s in sents if not any(term in s.lower() for term in ["cookie", "regist", "suscri", "privacidad"])]
-        text = re.sub(r'\s+', ' ', ' '.join(cleaned)).strip()
-        words = text.split()
-        new_content  = ' '.join(words[:self.max_scraped_words]) if len(words) > self.max_scraped_words else text
-        return new_content
-
     def extract_with_newspaper(self, url):
         try:
             art = Article(url, language='es')
             art.config.browser_user_agent = USER_AGENT
             art.download()
             art.parse()
-            t = self.clean_content(art.text)
-            return t
+            return art.text
         except Exception as e:
             self.logger.warning(f"Newspaper3k failed for {url}: {e}")
         return ""
@@ -184,34 +173,32 @@ class NewsScraper:
         return desc_len < self.min_word_threshold
 
     def scrape_content(self, url):
-        if not url:
-            self.logger.warning("Empty URL provided.")
-            self.error_counts["empty_url"] += 1
-            return ""
-
         try:
+            if not url:
+                self.logger.warning("Empty URL provided.")
+                self.error_counts["empty_url"] += 1
+                return ""
+            
             domain = self.get_domain(url)
             self.rate_limiter.wait(domain)
             self.stats["requests_made"] += 1
             content = self.extract_with_newspaper(url)
+
             if not content:
+                self.logger.warning(f"Failed to extract content from {url}")
+                self.error_counts["empty_content"] += 1
                 return ""
-
-
 
             if self.is_duplicate(content):
                 self.logger.warning(f"Duplicate content detected for {url}")
                 self.error_counts["duplicate_content"] += 1
                 return ""
             
-            scr_content_length = len(content.split())
-            if scr_content_length < self.min_scraped_words:
-                self.logger.warning(f"Content too short ({scr_content_length} words) for {url}, minimum required: {self.min_scraped_words}")
+            if len(content.split()) < self.min_scraped_words:
+                self.logger.warning(f"Content too short ({len(content.split())} words) for {url}, minimum required: {self.min_scraped_words}")
                 self.error_counts["short_content"] += 1
-                
                 return ""
-
-            # If we got here, content is long enough
+            
             self.stats["successful_scrapes"] += 1
             return content
         except requests.exceptions.RequestException as e:
@@ -314,6 +301,7 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
                 if robots_checker.can_fetch(link):
                     scr_desc = scraper.scrape_content(link)
                     scraper.logger.info(f"Scraped description for article {process_item.current_count}/{total_items} from {medium}")
+                    scraper.logger.error(f"Scraped content: {scr_desc})")
                 else:
                     scraper.logger.warning(f"Blocked by robots.txt: {link}")
                     scraper.error_counts["blocked_by_robots"] += 1
@@ -321,7 +309,7 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
             return News(
                 title=title,
                 description=desc,
-                scraped_description=scr_desc if scr_desc != "" else desc,
+                scraped_description=scr_desc,
                 category=cat,
                 image_url=img,
                 link=link,
