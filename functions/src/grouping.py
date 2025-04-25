@@ -67,8 +67,8 @@ def group_news(noticias_json):
         df = pd.DataFrame(noticias_json)
                 
         # Check that the required columns exist
-        if "id" not in df.columns or "title" not in df.columns or "description" not in df.columns:
-            raise ValueError("The JSON must contain the columns 'id', 'title' and 'description' with the text of the news")
+        if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
+            raise ValueError("The JSON must contain the columns 'id', 'title' and 'scraped_description' with the text of the news")
         
         # Prepare column for new groups
         df["group"] = None
@@ -100,8 +100,8 @@ def group_news(noticias_json):
         # Generate embeddings
         print("ℹ️ Loading embeddings model...")
         
-        # Concatenate 'title' and 'description' into a new column 'noticia_completa'
-        df["noticia_completa"] = df["title"].fillna("") + " " + df["description"].fillna("")
+        # Concatenate 'title' and 'scraped_description' into a new column 'noticia_completa'
+        df["noticia_completa"] = df["title"].fillna("") + " " + df["scraped_description"].fillna("")
         
         # Get model with retry support
         model = get_sentence_transformer_model()
@@ -218,7 +218,7 @@ def group_news(noticias_json):
                         "id": row["id"],
                         "group": group,
                         "title": row["title"],
-                        "description": row["description"],
+                        "scraped_description": row["scraped_description"],
                         "source_medium": row["source_medium"]
                     })
                 continue
@@ -247,7 +247,7 @@ def group_news(noticias_json):
                         "id": row["id"],
                         "group": None,
                         "title": row["title"],
-                        "description": row["description"],
+                        "scraped_description": row["scraped_description"],
                         "source_medium": row["source_medium"]
                     })
             else:
@@ -256,7 +256,7 @@ def group_news(noticias_json):
                         "id": row["id"],
                         "group": group,
                         "title": row["title"],
-                        "description": row["description"],
+                        "scraped_description": row["scraped_description"],
                         "source_medium": row["source_medium"]
                     })
         
@@ -266,7 +266,7 @@ def group_news(noticias_json):
                 "id": row["id"],
                 "group": None,
                 "title": row["title"],
-                "description": row["description"],
+                "scraped_description": row["scraped_description"],
                 "source_medium": row["source_medium"]
             })
         

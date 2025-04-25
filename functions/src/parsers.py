@@ -301,7 +301,6 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
                 if robots_checker.can_fetch(link):
                     scr_desc = scraper.scrape_content(link)
                     scraper.logger.info(f"Scraped description for article {process_item.current_count}/{total_items} from {medium}")
-                    scraper.logger.error(f"Scraped content: {scr_desc})")
                 else:
                     scraper.logger.warning(f"Blocked by robots.txt: {link}")
                     scraper.error_counts["blocked_by_robots"] += 1

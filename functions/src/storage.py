@@ -61,7 +61,7 @@ def get_news_for_grouping():
         news_item = {
             "id": data["id"],
             "title": data["title"],
-            "description": data["description"],
+            "scraped_description": data["scraped_description"],
             "source_medium": data["source_medium"]
         }
         
