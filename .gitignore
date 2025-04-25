@@ -85,15 +85,3 @@ __pycache__/
 *.pyo
 functions/__pycache__/main.cpython-312.pyc
 functions/src/__pycache__/models.cpython-312.pyc
-
-GDELT/classified_news.csv
-GDELT/out/gdelt_final_extraction.csv
-GDELT/in/*
-GDELT/out/*
-
-#Firebase
-iOS/NeutralNews/GoogleService-Info.plist
-
-# gitignore contents of C:\Dev\github\NeutralNews\projecte-2-dam-24-25-neutral-news\GDELT\Phase 2\results-t5-neutral-paraphrase
-
-GDELT/Phase 2/results-t5-neutral-paraphrase/*
