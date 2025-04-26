@@ -28,7 +28,7 @@ struct NeutralNewsView: View {
                     VStack {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {
-//                                Label("Notícia neutral", systemImage: "sparkles")
+//                                Label("Noticia neutral", systemImage: "sparkles")
 //                                Spacer()
                                 Text(news.category.uppercased())
                                 Spacer()

@@ -17,6 +17,11 @@ final class ViewModel: NSObject {
     var groupsOfNews = [[News]]()
     var neutralNews = [NeutralNews]()
     
+    var searchText: String = "" {
+        didSet {
+            applyFilters()
+        }
+    }
     var mediaFilter: Set<Media> = []
     var categoryFilter: Set<Category> = []
     var isAnyFilterEnabled: Bool {
@@ -191,21 +196,26 @@ final class ViewModel: NSObject {
     }
     
     func applyFilters() {
-        if mediaFilter.isEmpty && categoryFilter.isEmpty {
-            filteredNews = neutralNews
-            return
-        }
+        var newsToFilter = neutralNews
         
-        filteredNews = neutralNews.filter { news in
-//            let matchesMedia = mediaFilter.isEmpty || mediaFilter.contains(news.sourceMedium)
-            let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
-                news.category.normalized() == category.rawValue.normalized()
+        if !mediaFilter.isEmpty || !categoryFilter.isEmpty {
+            newsToFilter = newsToFilter.filter { news in
+                let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
+                    news.category.normalized() == category.rawValue.normalized()
+                }
+                return matchesCategory
             }
-            
-            return /*matchesMedia &&*/ matchesCategory
         }
         
-        filteredNews.sort { $0.createdAt > $1.createdAt }
+        if !searchText.isEmpty {
+            let normalizedQuery = searchText.normalizedSearchString()
+            newsToFilter = newsToFilter.filter {
+                $0.neutralTitle.normalizedSearchString().contains(normalizedQuery) ||
+                $0.neutralDescription.normalizedSearchString().contains(normalizedQuery)
+            }
+        }
+        
+        filteredNews = newsToFilter.sorted { $0.createdAt > $1.createdAt }
     }
     
     func clearFilters() {
@@ -216,6 +226,14 @@ final class ViewModel: NSObject {
     
     func allCategories() -> Set<String> {
         Set(allNews.map(\.category))
+    }
+}
+
+
+extension String {
+    func normalizedSearchString() -> String {
+        folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: "[^a-zA-Z0-9\\s]", with: "", options: .regularExpression)
     }
 }
 
@@ -267,4 +285,4 @@ func getDominantColor(from urlString: String?) async -> Color {
     } catch {
         return .gray
     }
-    }
+}

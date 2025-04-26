@@ -35,6 +35,7 @@ struct HomeView: View {
                 vm.fetchNeutralNewsFromFirestore()
                 vm.fetchNewsFromFirestore()
             }
+            .searchable(text: $vm.searchText, prompt: "Buscar")
             .navigationTitle("Hoy")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
