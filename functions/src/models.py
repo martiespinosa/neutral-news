@@ -69,7 +69,7 @@ class News:
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "scraped_description": self.description,
+            "scraped_description": self.scraped_description,
             "category": self.category,
             "image_url": self.image_url,
             "link": self.link,

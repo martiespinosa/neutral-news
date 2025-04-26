@@ -58,10 +58,18 @@ def get_news_for_grouping():
     
     for doc in all_docs.values():
         data = doc.to_dict()
+        
+        # Use scraped_description if available, otherwise fall back to description
+        description_text = ""
+        if "scraped_description" in data:
+            description_text = data["scraped_description"]
+        elif "description" in data:
+            description_text = data["description"]
+        
         news_item = {
             "id": data["id"],
             "title": data["title"],
-            "description": data["description"],
+            "scraped_description": description_text,
             "source_medium": data["source_medium"]
         }
         

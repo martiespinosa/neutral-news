@@ -41,7 +41,7 @@ def prepare_groups_for_neutralization(grouped_news):
             grupos[grupo].append({
                 "id": noticia.get("id"),
                 "title": noticia.get("title"),
-                "description": noticia.get("description"),
+                "scraped_description": noticia.get("scraped_description"),
                 "source_medium": noticia.get("source_medium"),
             })
 
