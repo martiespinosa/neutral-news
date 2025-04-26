@@ -48,7 +48,7 @@ enum Media: String, CaseIterable, Codable {
         )
         case .cope: PressMedia(
             name: "COPE",
-            link: "https://feeds2.feedburner.com/libertaddigital/portada"
+            link: "https://www.cope.es/api/es/news/rss.xml"
         )
         case .diarioRed: PressMedia(
             name: "Diario Red",
