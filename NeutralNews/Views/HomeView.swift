@@ -16,21 +16,35 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack {
-                    ForEach(vm.filteredNews) { neutralNews in
-                        NavigationLink {
-                            NeutralNewsView(news: neutralNews, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
-                                .navigationTransition(.zoom(sourceID: neutralNews.id, in: animationNamespace))
-                        } label: {
-                            NewsImageView(news: neutralNews, imageUrl: neutralNews.imageUrl)
-                                .padding(.vertical, 4)
-                                .matchedTransitionSource(id: neutralNews.id, in: animationNamespace)
-                        }
-                        .buttonStyle(.plain)
+                if vm.searchText.isEmpty == false && vm.filteredNews.isEmpty {
+                    VStack {
+                        Spacer()
+                        ContentUnavailableView(
+                            "No hay resultados para \"\(vm.searchText)\"",
+                            systemImage: "magnifyingglass",
+                            description: Text("Prueba con otra búsqueda o vuelve a intentarlo más tarde.")
+                        )
+                        Spacer()
                     }
+                    .frame(minHeight: UIScreen.main.bounds.height - 200)
+                } else {
+                    LazyVStack {
+                        ForEach(vm.filteredNews) { neutralNews in
+                            NavigationLink {
+                                NeutralNewsView(news: neutralNews, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
+                                    .navigationTransition(.zoom(sourceID: neutralNews.id, in: animationNamespace))
+                            } label: {
+                                NewsImageView(news: neutralNews, imageUrl: neutralNews.imageUrl)
+                                    .padding(.vertical, 4)
+                                    .matchedTransitionSource(id: neutralNews.id, in: animationNamespace)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
             }
+            .scrollBounceBehavior(.basedOnSize)
             .refreshable {
                 vm.fetchNeutralNewsFromFirestore()
                 vm.fetchNewsFromFirestore()
@@ -58,7 +72,7 @@ struct HomeView: View {
                             }
                         }
                     }
-
+                    
                 }
             }
             Menu("Categoria") {
