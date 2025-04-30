@@ -1,4 +1,4 @@
-from firebase_functions import scheduler_fn
+from firebase_functions import scheduler_fn, options
 from datetime import datetime, timedelta
 import traceback
 
@@ -7,7 +7,9 @@ from src.storage import store_news_in_firestore
 from src.config import initialize_firebase
 from src.parsers import fetch_all_rss
 
-@scheduler_fn.on_schedule(schedule="every 4 hours", memory=4096, timeout_sec=540)
+options.set_global_options(region=options.SupportedRegion.US_CENTRAL1) # Or your desired region e.g. us_central1
+
+@scheduler_fn.on_schedule(schedule="every 4 hours", memory=4096, timeout_sec=540, gen=2)
 def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
     try:
         print("Starting periodic RSS loading...")
@@ -36,7 +38,7 @@ def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
         return None
 
 
-@scheduler_fn.on_schedule(schedule="every 24 hours", memory=1024, timeout_sec=300)
+@scheduler_fn.on_schedule(schedule="every 24 hours", memory=1024, timeout_sec=300, gen=2)
 def cleanup_old_news(event: scheduler_fn.ScheduledEvent) -> None:
     try:
         print("Starting old news deletion process...")

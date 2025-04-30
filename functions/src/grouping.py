@@ -1,7 +1,8 @@
 import os
 import traceback
-
-# Define a global model variable 
+import time
+import shutil # Import shutil for directory removal
+# Define a global model variable
 _model = None
 _nlp_modules_loaded = False
 
@@ -10,48 +11,107 @@ def _load_nlp_modules():
     global _nlp_modules_loaded
     if not _nlp_modules_loaded:
         global np, pd, SentenceTransformer, NearestNeighbors, lil_matrix, DBSCAN
-        
+
         import numpy as np
         import pandas as pd
         from sentence_transformers import SentenceTransformer
         from sklearn.neighbors import NearestNeighbors
         from scipy.sparse import lil_matrix
         from sklearn.cluster import DBSCAN
-        
+
         _nlp_modules_loaded = True
 
 def get_sentence_transformer_model(retry_count=3):
-    """Get or initialize the sentence transformer model with retries"""
+    """Get or initialize the sentence transformer model.
+    In Cloud Functions, attempts to load from a bundled path first.
+    Falls back to downloading if bundled load fails or if running locally.
+    """
     _load_nlp_modules()
-    
+
     global _model
-    if _model is None:
-        for attempt in range(retry_count):
+    if _model is not None:
+        return _model
+
+    model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Path where the model is expected to be in the Docker image
+    bundled_model_path = "/app/model"
+
+    # --- Attempt 1: Load from bundled path if in Cloud Function ---
+    if os.getenv("FUNCTION_TARGET"):
+        print(f"ℹ️ Cloud Function environment detected. Attempting to load model from bundled path: {bundled_model_path}")
+        try:
+            if os.path.exists(bundled_model_path):
+                _model = SentenceTransformer(bundled_model_path)
+                print(f"✅ Model loaded successfully from bundled path: {bundled_model_path}")
+                return _model
+            else:
+                 print(f"⚠️ Bundled model path not found: {bundled_model_path}. Falling back to download.")
+        except Exception as e:
+            print(f"⚠️ Failed to load model from bundled path {bundled_model_path}: {type(e).__name__}: {str(e)}")
+            print("ℹ️ Falling back to downloading the model.")
+            # If loading from bundled path fails, proceed to download logic below
+
+    # --- Attempt 2: Download model (Fallback or Local) ---
+    cache_dir = None
+    if os.getenv("FUNCTION_TARGET"):
+        # Use /tmp for caching when downloading within Cloud Function (fallback scenario)
+        cache_dir = "/tmp/sentence_transformers_cache"
+        print(f"ℹ️ Using temporary cache directory for download: {cache_dir}")
+        # Attempt to clear the cache directory before download
+        if os.path.exists(cache_dir):
+            print(f"ℹ️ Attempting to clear existing cache directory: {cache_dir}")
             try:
-                # Check if we're in a Cloud Function environment
-                if os.getenv("FUNCTION_TARGET"):
-                    # Use a path within /tmp which is writable in Cloud Functions
-                    cache_dir = "/tmp/sentence_transformers_cache"
-                    os.makedirs(cache_dir, exist_ok=True)
-                    
-                    # Try to load the model with caching
-                    _model = SentenceTransformer(
-                        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                        cache_folder=cache_dir
-                    )
-                else:
-                    # Local development environment - normal loading
-                    _model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-                break  # Success! Exit retry loop
+                shutil.rmtree(cache_dir)
+                print(f"✅ Successfully cleared cache directory: {cache_dir}")
             except OSError as e:
-                if attempt == retry_count - 1:  # If this was the last attempt
-                    raise RuntimeError(
-                        f"Failed to download the model after {retry_count} attempts: {str(e)}"
-                    )
-                print(f"Model download failed, retrying ({attempt+1}/{retry_count})...")
-                import time
-                time.sleep(2 ** attempt)  # Exponential backoff
-    
+                print(f"⚠️ Warning: Could not remove cache directory {cache_dir}: {e}")
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            print(f"✅ Ensured cache directory exists: {cache_dir}")
+        except OSError as e:
+             print(f"❌ Error creating cache directory {cache_dir}: {e}. Proceeding without specific cache folder.")
+             cache_dir = None # Fallback to default library caching if creation fails
+    else:
+        print("ℹ️ Local environment detected. Using default cache for download.")
+
+    # Retry loop for downloading
+    for attempt in range(retry_count):
+        try:
+            print(f"ℹ️ Download Attempt {attempt + 1}/{retry_count}: Loading model '{model_name}'...")
+            if cache_dir:
+                 print(f"ℹ️ Using cache folder: {cache_dir}")
+                 _model = SentenceTransformer(
+                     model_name,
+                     cache_folder=cache_dir
+                 )
+            else:
+                 # Local development or cache creation failed
+                 _model = SentenceTransformer(model_name)
+
+            print(f"✅ Model '{model_name}' downloaded/loaded successfully.")
+            break  # Success! Exit retry loop
+
+        except (OSError, ImportError, Exception) as e: # Catch broader exceptions during download/load
+            print(f"❌ Download Attempt {attempt + 1} failed: {type(e).__name__}: {str(e)}")
+            # Log traceback for detailed debugging on later attempts
+            if attempt > 0:
+                traceback.print_exc()
+
+            if isinstance(e, ImportError):
+                 print("❌ Potential missing dependency. Ensure torch/tensorflow and transformers are installed.")
+
+            if attempt == retry_count - 1:  # If this was the last attempt
+                print(f"❌ Failed to load/download the model after {retry_count} attempts.")
+                # Re-raise the last exception caught
+                raise RuntimeError(
+                    f"Failed to load/download the model after {retry_count} attempts. Last error: {str(e)}"
+                ) from e
+
+            # Exponential backoff
+            wait_time = 2 ** attempt
+            print(f"ℹ️ Retrying download in {wait_time} seconds...")
+            time.sleep(wait_time)
+
     return _model
 
 def group_news(noticias_json):
