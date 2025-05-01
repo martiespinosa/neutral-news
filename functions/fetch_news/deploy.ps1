@@ -15,7 +15,9 @@ gcloud run deploy fetch-news-service `
   --cpu 1 `
   --timeout 540 `
   --set-secrets=OPENAI_API_KEY=openai-api-key:latest `
-  --allow-unauthenticated
+  --allow-unauthenticated `
+  --cpu-boost
+
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Cloud Run deployment failed."
     exit $LASTEXITCODE

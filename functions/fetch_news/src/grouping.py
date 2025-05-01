@@ -10,12 +10,12 @@ def _load_nlp_modules():
     """Lazily import NLP-related modules to speed up cold starts"""
     global _nlp_modules_loaded
     if not _nlp_modules_loaded:
-        global np, pd, SentenceTransformer, NearestNeighbors, lil_matrix, DBSCAN
+        global np, pd, SentenceTransformer, NearestNeighbors, lil_matrix, DBSCAN, sort_graph_by_row_values
 
         import numpy as np
         import pandas as pd
         from sentence_transformers import SentenceTransformer
-        from sklearn.neighbors import NearestNeighbors
+        from sklearn.neighbors import NearestNeighbors, sort_graph_by_row_values
         from scipy.sparse import lil_matrix
         from sklearn.cluster import DBSCAN
 
@@ -124,15 +124,18 @@ def group_news(noticias_json):
         _load_nlp_modules()
         
         # Convert to DataFrame
+        print("ℹ️ Converting JSON to DataFrame...")
         df = pd.DataFrame(noticias_json)
                 
         # Check that the required columns exist
+        
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
             raise ValueError("The JSON must contain the columns 'id', 'title' and 'scraped_description' with the text of the news")
         
         # Prepare column for new groups
         df["group"] = None
         
+        print("ℹ️ Checking for existing groups...")
         # Preserve existing groups
         has_reference_news = "existing_group" in df.columns
         if has_reference_news:
@@ -151,7 +154,9 @@ def group_news(noticias_json):
                 return df[["id", "group"]].to_dict(orient='records')
         else:
             df["is_reference"] = False
+        print(f"ℹ️ Found {df['is_reference'].sum()} reference news and {len(df[~df['is_reference']])} news to group.")
         
+        print("ℹ️ Assigning a new group to news without a reference...")
         # If there's only one news item to group, assign a new group
         if len(df[~df["is_reference"]]) <= 1 and not has_reference_news:
             df.loc[~df["is_reference"], "group"] = 0
@@ -165,9 +170,48 @@ def group_news(noticias_json):
         
         # Get model with retry support
         model = get_sentence_transformer_model()
-        
+
         print("ℹ️ Generating embeddings...")
-        embeddings = model.encode(df["noticia_completa"].tolist(), convert_to_numpy=True)
+        texts_to_encode = df["noticia_completa"].tolist()
+        total_texts = len(texts_to_encode)
+        # Tunable: try 128
+        batch_size = 64
+        embeddings_list = []
+        start_time_embed = time.time()
+        processed_count = 0
+        next_log_percentage = 10 # Start logging at 10%
+
+        for i in range(0, total_texts, batch_size):
+            batch = texts_to_encode[i:min(i + batch_size, total_texts)]
+            # Ensure model.encode is called without its internal progress bar for cleaner logs
+            batch_embeddings = model.encode(
+                batch,
+                convert_to_numpy=True,
+                show_progress_bar=False # Disable sentence-transformers internal bar
+            )
+            embeddings_list.append(batch_embeddings)
+            processed_count = min(i + batch_size, total_texts)
+
+            # Check if the current progress crossed the next logging threshold
+            current_percentage = (processed_count / total_texts) * 100
+            if current_percentage >= next_log_percentage:
+                elapsed_time = time.time() - start_time_embed
+                # Use floor on percentage for cleaner logging (e.g., log 10% even if slightly over)
+                log_perc = int(next_log_percentage)
+                print(f"⏳ Embeddings: {log_perc}% complete ({processed_count}/{total_texts} texts). Time elapsed: {elapsed_time:.2f} seconds.")
+                # Set the next target percentage, ensuring it doesn't exceed 100
+                next_log_percentage = min(log_perc + 10, 100)
+                # Handle the case where we might skip a percentage point with a large batch
+                while current_percentage >= next_log_percentage and next_log_percentage <= 100:
+                     next_log_percentage += 10
+
+
+        # Concatenate embeddings from all batches
+        embeddings = np.vstack(embeddings_list)
+        end_time_embed = time.time()
+        # Final log message remains useful
+        print(f"✅ Embeddings generated for {total_texts} texts in {end_time_embed - start_time_embed:.2f} seconds.")
+
                 
         # Parameters for clustering
         eps = 0.25  # Distance threshold
@@ -180,32 +224,31 @@ def group_news(noticias_json):
         norms[norms == 0] = 1e-10
         embeddings_norm = embeddings / norms
         
-        print("ℹ️ Calculating nearest neighbors...")
-        
+        print("ℹ️ Calculating nearest neighbors graph...")
+
         # Nearest neighbors model
-        nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(embeddings_norm)
-        
-        # Get distances and nearest neighbors
-        distances, indices = nbrs.kneighbors(embeddings_norm)
-        
-        # Convert similarity to distance (DBSCAN uses distance)
-        distances = 1 - distances
-        
-        print("ℹ️ Building distance matrix...")
-        # Build distance matrix
-        num_embeddings = embeddings.shape[0]
-        sparse_matrix = lil_matrix((num_embeddings, num_embeddings))
-        
-        for i in range(num_embeddings):
-            for j in range(n_neighbors):
-                # Save similarity in sparse matrix
-                sparse_matrix[i, indices[i, j]] = 1 - distances[i, j]
-        
+        # Ensure n_neighbors is not larger than the number of samples
+        effective_n_neighbors = min(n_neighbors, embeddings_norm.shape[0])
+        nbrs = NearestNeighbors(n_neighbors=effective_n_neighbors, metric="cosine").fit(embeddings_norm)
+
+        # Build sparse distance matrix directly using kneighbors_graph
+        # mode='distance' gives the cosine distance (1 - similarity), which DBSCAN needs
+        dist_matrix_sparse = nbrs.kneighbors_graph(
+            embeddings_norm,
+            n_neighbors=effective_n_neighbors,
+            mode='distance'
+        )
+        # Sort the sparse graph for DBSCAN efficiency
+        print("ℹ️ Sorting sparse distance graph...")
+        dist_matrix_sparse_sorted = sort_graph_by_row_values(dist_matrix_sparse)
+        # No need for the manual loop to build the sparse matrix anymore
+
         print("ℹ️ Applying DBSCAN algorithm...")
-        # Apply DBSCAN with sparse matrix
+        # Apply DBSCAN with the precomputed *sorted* sparse distance matrix
         clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
-        group_labels = clustering.fit_predict(sparse_matrix.tocsr())
-                
+        # Pass the sorted graph directly
+        group_labels = clustering.fit_predict(dist_matrix_sparse_sorted)
+
         # Assign groups only to news that don't have one
         temp_group_column = "temp_group"
         df[temp_group_column] = group_labels
