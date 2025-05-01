@@ -9,7 +9,11 @@ from src.functions.scheduled_tasks import fetch_news_task
 # Ensure the region matches your desired deployment region
 options.set_global_options(region=options.SupportedRegion.US_CENTRAL1) # Or your region
 
-@scheduler_fn.on_schedule(schedule="every 4 hours", memory=4096, timeout_sec=540)
+@scheduler_fn.on_schedule(
+    schedule="every 4 hours",
+    memory=8192,      # Example: 8192 MiB (8GiB)
+    timeout_sec=1800  # Example: 1800 seconds (30 minutes)
+)
 def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
     # Your function logic here
     print("Executing fetch_news function...")

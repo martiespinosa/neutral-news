@@ -174,8 +174,8 @@ def group_news(noticias_json):
         print("ℹ️ Generating embeddings...")
         texts_to_encode = df["noticia_completa"].tolist()
         total_texts = len(texts_to_encode)
-        # Tunable: try 128
-        batch_size = 64
+        # Tunable:  128
+        batch_size = 256
         embeddings_list = []
         start_time_embed = time.time()
         processed_count = 0
