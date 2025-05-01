@@ -1,5 +1,5 @@
 Write-Host "Submitting build to Cloud Build..."
-gcloud builds submit --tag gcr.io/neutralnews-ca548/cleanup-old-news-image .
+gcloud builds submit --config cloudbuild.yaml .
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Cloud Build submission failed."
     exit $LASTEXITCODE
