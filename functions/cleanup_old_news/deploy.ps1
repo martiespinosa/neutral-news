@@ -1,14 +1,3 @@
-python3 -m venv venv
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to create Python virtual environment."
-    exit $LASTEXITCODE
-}
-
-.\venv\Scripts\Activate
-# Note: Activating venv in a script doesn't persist for subsequent commands in the same script execution easily.
-# Consider running gcloud directly or ensuring dependencies are met differently if needed.
-# For now, assuming gcloud is in PATH and doesn't rely on the venv activation within the script itself.
-
 Write-Host "Submitting build to Cloud Build..."
 gcloud builds submit --tag gcr.io/neutralnews-ca548/cleanup-old-news-image .
 if ($LASTEXITCODE -ne 0) {
@@ -31,5 +20,3 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 Write-Host "Cloud Run deployment successful."
-
-deactivate

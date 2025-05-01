@@ -1,0 +1,11 @@
+# Ignore the Python virtual environment directory
+venv/
+
+# You might also want to ignore other common files/folders:
+.git/
+.gitignore
+.env*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
