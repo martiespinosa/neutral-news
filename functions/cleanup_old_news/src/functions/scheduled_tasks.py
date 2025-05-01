@@ -1,5 +1,3 @@
-# scheduled_tasks.py
-
 from datetime import datetime, timedelta
 import traceback
 from src.config import initialize_firebase

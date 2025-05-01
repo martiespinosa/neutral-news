@@ -1,5 +1,3 @@
-# main.py for fetch_news
-
 from firebase_functions import scheduler_fn
 from firebase_functions import https_fn, options
 import traceback
