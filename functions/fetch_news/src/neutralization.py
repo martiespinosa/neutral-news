@@ -1,11 +1,8 @@
 from openai import OpenAI
 import os, json
-from dotenv import load_dotenv
 
 from src.storage import store_neutral_news, update_news_with_neutral_scores, update_existing_neutral_news
 from .config import initialize_firebase
-
-load_dotenv(".env.local")
 
 def neutralize_and_more(news_groups, batch_size=5):
     """
@@ -140,7 +137,16 @@ def generate_neutral_analysis_batch(group_batch):
         return []
         
     results = []
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        # Log an error or raise an exception - function cannot proceed
+        print("ERROR: OPENAI_API_KEY environment variable not set.")
+        # Option 1: Return empty results
+        # return [None] * len(group_batch)
+        # Option 2: Raise an exception
+        raise ValueError("OpenAI API Key not configured.")
+        
+    client = OpenAI(api_key=api_key)
     
     system_message = """
     Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
