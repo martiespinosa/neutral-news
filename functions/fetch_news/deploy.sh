@@ -12,9 +12,9 @@ if ! gcloud run deploy fetch-news-service \
   --image gcr.io/neutralnews-ca548/fetch-news-image \
   --platform managed \
   --region us-central1 \
-  --memory 8192M \
+  --memory 4096M \
   --cpu 2 \
-  --timeout 1800 \
+  --timeout 540 \
   --set-secrets=OPENAI_API_KEY=openai-api-key:latest \
   --allow-unauthenticated \
   --cpu-boost \
