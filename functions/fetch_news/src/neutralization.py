@@ -146,6 +146,7 @@ def generate_neutral_analysis_batch(group_batch):
         # Option 2: Raise an exception
         raise ValueError("OpenAI API Key not configured.")
         
+    api_key = api_key.strip()
     client = OpenAI(api_key=api_key)
     
     system_message = """
@@ -214,6 +215,8 @@ def generate_neutral_analysis_batch(group_batch):
         
     except Exception as e:
         print(f"Error in generate_neutral_analysis_batch: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return [None] * len(group_batch)
 
 def generate_neutral_analysis(sources):
@@ -272,4 +275,6 @@ def generate_neutral_analysis(sources):
     
     except Exception as e:
         print(f"Error in generate_neutral_analysis: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
