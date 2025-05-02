@@ -139,11 +139,7 @@ def generate_neutral_analysis_batch(group_batch):
     results = []
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        # Log an error or raise an exception - function cannot proceed
         print("ERROR: OPENAI_API_KEY environment variable not set.")
-        # Option 1: Return empty results
-        # return [None] * len(group_batch)
-        # Option 2: Raise an exception
         raise ValueError("OpenAI API Key not configured.")
         
     api_key = api_key.strip()
@@ -152,24 +148,39 @@ def generate_neutral_analysis_batch(group_batch):
     system_message = """
     Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
     de una misma noticia contada por diferentes medios. Tu tarea:
-    1. Generar un titular neutral.
-    2. Crear una descripción neutral.
+
+    1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
+       informativo y capturar la esencia de la noticia.
+    
+    2. Crear una descripción neutral estructurada en párrafos cortos, con un límite aproximado 
+       de 250 palabras en total. El primer párrafo debe contener la información más importante.
+    
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
-    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Otros.
-    Devuelve solo un JSON con esta estructura (sin explicaciones):
+    
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, 
+       Internacional, Entretenimiento, Otros.
+       
+    5. Evaluar la relevancia de la noticia en una escala del 1 al 5, donde:
+       1 = Muy baja relevancia (interés muy local o limitado / publicidad o propaganda)
+       2 = Baja relevancia (interés limitado a ciertos grupos)
+       3 = Relevancia media (interés general pero sin gran impacto)
+       4 = Alta relevancia (interés amplio con posible impacto social/político/económico)
+       5 = Muy alta relevancia (gran impacto social/político/económico, noticia de primer nivel)
+
+    Devuelve SOLO un JSON con esta estructura (sin explicaciones adicionales):
     {
-    "neutral_title": "...",
-    "neutral_description": "...",
-    "category": "...",
-    "source_ratings": [
-    {"source_medium": "...", "rating": 75},
-    ...
-    ]
+        "neutral_title": "...",
+        "neutral_description": "...",
+        "category": "...",
+        "relevance": X,
+        "source_ratings": [
+            {"source_medium": "...", "rating": X},
+            ...
+        ]
     }
     """
     
     try:
-        # Preparar los mensajes para cada grupo
         messages_list = []
         
         for group_info in group_batch:
@@ -196,20 +207,39 @@ def generate_neutral_analysis_batch(group_batch):
                 
         # Realizar las llamadas a la API en paralelo
         for messages in messages_list:
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
-                
-                result_json = json.loads(response.choices[0].message.content)
-                results.append(result_json)
-                
-            except Exception as e:
-                print(f"Error in API call: {str(e)}")
-                results.append(None)
+            max_retries = 3
+            retry_count = 0
+            result = None
+            
+            while retry_count < max_retries:
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        temperature=0.3,
+                        response_format={"type": "json_object"}
+                    )
+                    
+                    result_json = json.loads(response.choices[0].message.content)
+                    result = result_json
+                    break  # Si la llamada fue exitosa, salimos del bucle
+                    
+                except Exception as e:
+                    retry_count += 1
+                    print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {str(e)}")
+                    
+                    if retry_count < max_retries:
+                        # Esperar antes de reintentar (backoff exponencial)
+                        import time
+                        wait_time = 2 ** retry_count  # 2, 4, 8 segundos
+                        print(f"Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        print("Max retries reached, giving up on this request")
+                        import traceback
+                        traceback.print_exc()
+            
+            results.append(result)
                 
         return results
         
@@ -227,18 +257,32 @@ def generate_neutral_analysis(sources):
     Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones 
     de una misma noticia contada por diferentes medios. Tu tarea:
     
-    1. Generar un titular neutral.
-    2. Crear una descripción neutral.
+    1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
+       informativo y capturar la esencia de la noticia.
+    
+    2. Crear una descripción neutral estructurada en párrafos cortos, con un límite aproximado 
+       de 250 palabras en total. El primer párrafo debe contener la información más importante.
+    
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
-    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, Internacional, Entretenimiento, Otros.
+    
+    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, 
+       Internacional, Entretenimiento, Otros.
+       
+    5. Evaluar la relevancia de la noticia en una escala del 1 al 5, donde:
+       1 = Muy baja relevancia (interés muy local o limitado / publicidad o propaganda)
+       2 = Baja relevancia (interés limitado a ciertos grupos)
+       3 = Relevancia media (interés general pero sin gran impacto)
+       4 = Alta relevancia (interés amplio con posible impacto social/político/económico)
+       5 = Muy alta relevancia (gran impacto social/político/económico, noticia de primer nivel)
 
-    Devuelve solo un JSON con esta estructura (sin explicaciones):
+    Devuelve SOLO un JSON con esta estructura (sin explicaciones adicionales):
     {
         "neutral_title": "...",
         "neutral_description": "...",
         "category": "...",
+        "relevance": X,
         "source_ratings": [
-            {"source_medium": "...", "rating": 75},
+            {"source_medium": "...", "rating": X},
             ...
         ]
     }
@@ -258,20 +302,44 @@ def generate_neutral_analysis(sources):
     user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
     
     try:
-        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            api_key = api_key.strip()
+        client = OpenAI(api_key=api_key)
         
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
+        max_retries = 3
+        retry_count = 0
         
-        result_json = json.loads(response.choices[0].message.content)
-        return result_json
+        while retry_count < max_retries:
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                
+                result_json = json.loads(response.choices[0].message.content)
+                return result_json
+                
+            except Exception as e:
+                retry_count += 1
+                print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {str(e)}")
+                
+                if retry_count < max_retries:
+                    # Esperar antes de reintentar (backoff exponencial)
+                    import time
+                    wait_time = 2 ** retry_count  # 2, 4, 8 segundos
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    print("Max retries reached, giving up on this request")
+                    import traceback
+                    traceback.print_exc()
+                    return None
     
     except Exception as e:
         print(f"Error in generate_neutral_analysis: {str(e)}")

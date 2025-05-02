@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from urllib.parse import urlparse, unquote
 from .config import initialize_firebase
 
 def store_news_in_firestore(news_list):
@@ -176,8 +177,6 @@ def load_all_news_links_from_medium(medium):
     
     return news_links
 
-
-
 def store_neutral_news(group, neutralization_result, source_ids):
     """
     Almacena el resultado de la neutralización en la colección neutral_news.
@@ -188,7 +187,9 @@ def store_neutral_news(group, neutralization_result, source_ids):
         if group is not None:
             group = int(float(group))
 
-        image_url = get_most_neutral_image(
+        oldest_pub_date = get_oldest_pub_date(source_ids, db)
+
+        image_url, image_medium = get_most_neutral_image(
             source_ids, 
             neutralization_result.get("source_ratings", [])
         )
@@ -199,9 +200,12 @@ def store_neutral_news(group, neutralization_result, source_ids):
             "neutral_title": neutralization_result.get("neutral_title"),
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
+            "relevance": neutralization_result.get("relevance"),
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
+            "date": oldest_pub_date,
             "image_url": image_url,
+            "image_medium": image_medium,
             "source_ids": source_ids,
         }
         
@@ -225,7 +229,7 @@ def update_existing_neutral_news(group, neutralization_result, source_ids):
         if group is not None:
             group = int(float(group))
 
-        image_url = get_most_neutral_image(
+        image_url, image_medium = get_most_neutral_image(
             source_ids, 
             neutralization_result.get("source_ratings", [])
         )
@@ -237,7 +241,10 @@ def update_existing_neutral_news(group, neutralization_result, source_ids):
             "neutral_title": neutralization_result.get("neutral_title"),
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
+            "relevance": neutralization_result.get("relevance"),
             "updated_at": datetime.now(),
+            "image_url": image_url,
+            "image_medium": image_medium,
             "source_ids": source_ids,
         }
 
@@ -311,14 +318,32 @@ def get_most_neutral_image(source_ids, source_ratings):
         # Tomar la URL de la imagen de la noticia más neutral
         selected_news = news_with_images[0]
         image_url = selected_news.get("image_url")
+        image_medium = selected_news.get("source_medium")
         
-        return image_url
+        return image_url, image_medium
         
     except Exception as e:
         print(f"Error in get_most_neutral_image: {str(e)}")
         import traceback
         traceback.print_exc()
         return None
+    
+def get_oldest_pub_date(source_ids, db):
+    pub_dates = []
+
+    for news_id in source_ids:
+        doc = db.collection("news").document(news_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            pub_date_str = data.get("pub_date")
+            if pub_date_str:
+                try:
+                    pub_date = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
+                    pub_dates.append(pub_date)
+                except ValueError:
+                    print(f"Fecha no válida: {pub_date_str}")
+
+    return min(pub_dates) if pub_dates else datetime.now()
 
 def delete_old_news(hours=72):
     """
@@ -367,21 +392,14 @@ def is_valid_image_url(url):
     if not url:
         return False
     
-    # Extensiones de imagen comunes
-    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']
-    # Extensiones de video comunes para excluir
-    video_extensions = ['.mp4', '.webm', '.avi', '.mov', '.wmv', '.flv', '.mkv']
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.svg', '.ico', '.heic', '.heif', '.raw', '.cr2', '.nef', '.orf', '.sr2']
+    video_extensions = ['.mp4', '.m4v', '.mov', '.wmv', '.avi', '.flv', '.webm', '.mkv', '.3gp', '.mpeg', '.mpg', '.mpe', '.mpv', '.m2v', '.mts', '.m2ts', '.ts']
     
-    url_lower = url.lower()
-    
-    # Verificar si termina con extensión de imagen
-    is_image = any(url_lower.endswith(ext) for ext in image_extensions)
-    
-    # Verificar si termina con extensión de video
-    is_video = any(url_lower.endswith(ext) for ext in video_extensions)
-    
-    # También podemos buscar patrones en la URL que sugieran video
-    contains_video_pattern = 'video' in url_lower or 'player' in url_lower
-    
-    # Si la URL tiene una extensión de imagen y no parece ser un video
+    parsed_url = urlparse(url)
+    path = unquote(parsed_url.path).lower()
+
+    is_image = any(path.endswith(ext) for ext in image_extensions)
+    is_video = any(path.endswith(ext) for ext in video_extensions)
+    contains_video_pattern = 'video' in url.lower() or 'player' in url.lower()
+
     return is_image and not (is_video or contains_video_pattern)
