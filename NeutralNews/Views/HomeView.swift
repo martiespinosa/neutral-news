@@ -43,6 +43,16 @@ struct HomeView: View {
                     }
                     .padding(.horizontal)
                 }
+                
+                if vm.isLoafingNeutralNews {
+                    VStack {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(2)
+                        Spacer()
+                    }
+                    .frame(minHeight: UIScreen.main.bounds.height - 250)
+                }
             }
             .scrollBounceBehavior(.basedOnSize)
             .refreshable {

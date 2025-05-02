@@ -16,7 +16,7 @@ final class ViewModel: NSObject {
     var filteredNews = [NeutralNews]()
     var groupsOfNews = [[News]]()
     var neutralNews = [NeutralNews]()
-    
+    var isLoafingNeutralNews = false
     var searchText: String = "" {
         didSet {
             applyFilters()
@@ -35,6 +35,8 @@ final class ViewModel: NSObject {
     }
     
     func fetchNeutralNewsFromFirestore() {
+        isLoafingNeutralNews = true
+        
         let db = Firestore.firestore()
         db.collection("neutral_news").getDocuments { snapshot, error in
             if let error = error {
@@ -76,6 +78,7 @@ final class ViewModel: NSObject {
                 self.neutralNews = fetchedNeutralNews.sorted { $0.createdAt > $1.createdAt }
                 self.filterGroupedNews()
                 self.applyFilters()
+                self.isLoafingNeutralNews = false
             }
         }
     }
