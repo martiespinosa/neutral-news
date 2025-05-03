@@ -329,20 +329,52 @@ def get_most_neutral_image(source_ids, source_ratings):
         return None
     
 def get_oldest_pub_date(source_ids, db):
+    """
+    Obtiene la fecha de publicación más antigua de una lista de IDs de noticias.
+    Maneja múltiples formatos de fecha comunes en feeds RSS.
+    """
     pub_dates = []
+    
+    # Lista de formatos de fecha posibles
+    date_formats = [
+        "%a, %d %b %Y %H:%M:%S %z",     # Sat, 03 May 2025 18:07:56 +0200
+        "%d %b %Y %H:%M:%S %z",         # 03 May 2025 13:09:49 +0200
+        "%Y-%m-%dT%H:%M:%S%z",          # 2025-05-03T18:07:56+0200
+        "%Y-%m-%d %H:%M:%S%z",          # 2025-05-03 18:07:56+0200
+        "%a, %d %b %Y %H:%M:%S",        # Sin zona horaria
+        "%d %b %Y %H:%M:%S",            # Sin zona horaria
+        "%Y-%m-%dT%H:%M:%S",            # ISO sin zona horaria
+        "%Y-%m-%d %H:%M:%S"             # Sin zona horaria
+    ]
 
     for news_id in source_ids:
         doc = db.collection("news").document(news_id).get()
         if doc.exists:
             data = doc.to_dict()
             pub_date_str = data.get("pub_date")
+            
             if pub_date_str:
-                try:
-                    pub_date = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
-                    pub_dates.append(pub_date)
-                except ValueError:
-                    print(f"Fecha no válida: {pub_date_str}")
-
+                parsed = False
+                
+                for date_format in date_formats:
+                    try:
+                        cleaned_date_str = pub_date_str
+                        if "+0000" not in pub_date_str and "-0000" not in pub_date_str:
+                            for tz in [" GMT", " UTC", " UT", " Z"]:
+                                if pub_date_str.endswith(tz):
+                                    cleaned_date_str = pub_date_str.replace(tz, " +0000")
+                                    break
+                        
+                        pub_date = datetime.strptime(cleaned_date_str, date_format)
+                        pub_dates.append(pub_date)
+                        parsed = True
+                        break
+                    except ValueError:
+                        continue
+                
+                if not parsed:
+                    print(f"No se pudo parsear la fecha: {pub_date_str}")
+    
     return min(pub_dates) if pub_dates else datetime.now()
 
 def delete_old_news(hours=72):
