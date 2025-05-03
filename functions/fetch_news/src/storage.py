@@ -269,7 +269,8 @@ def get_most_neutral_image(source_ids, source_ratings):
         source_ratings: Lista de diccionarios con ratings de neutralidad por fuente
         
     Returns:
-        URL de la imagen más neutral, o None si ninguna noticia tiene imagen
+        Tuple of (image_url, source_medium) of the most neutral news with image,
+        or (None, None) if no news has a valid image or an error occurs
     """
     try:
         db = initialize_firebase()
@@ -307,13 +308,14 @@ def get_most_neutral_image(source_ids, source_ratings):
             if image_url and is_valid_image_url(image_url):
                 news_with_images.append(news)
         
-        # Si no hay ninguna noticia con imagen, devolvemos None
+        # Si no hay ninguna noticia con imagen, devolvemos (None, None)
         if not news_with_images:
             print("No news with images found in this group")
-            return None
+            return None, None
             
         # Ordenar por puntuación de neutralidad (mayor a menor)
-        news_with_images.sort(key=lambda x: x.get("neutral_score", 0), reverse=True)
+        # Usamos 0 como valor predeterminado para manejar casos donde neutral_score es None
+        news_with_images.sort(key=lambda x: x.get("neutral_score") or 0, reverse=True)
         
         # Tomar la URL de la imagen de la noticia más neutral
         selected_news = news_with_images[0]
@@ -321,6 +323,12 @@ def get_most_neutral_image(source_ids, source_ratings):
         image_medium = selected_news.get("source_medium")
         
         return image_url, image_medium
+        
+    except Exception as e:
+        print(f"Error in get_most_neutral_image: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None, None
         
     except Exception as e:
         print(f"Error in get_most_neutral_image: {str(e)}")
