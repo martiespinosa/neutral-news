@@ -16,17 +16,10 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if vm.searchText.isEmpty == false && vm.newsToShow.isEmpty {
-                    VStack {
-                        Spacer()
-                        ContentUnavailableView(
-                            "No hay resultados para \"\(vm.searchText)\" en noticias de \(vm.daySelected.dayName)",
-                            systemImage: "magnifyingglass",
-                            description: Text("Prueba con otra búsqueda o selecciona otro día.")
-                        )
-                        Spacer()
-                    }
-                    .frame(minHeight: UIScreen.main.bounds.height - 200)
+                if !vm.searchText.isEmpty && vm.newsToShow.isEmpty {
+                    noResultsView
+                } else if vm.searchText.isEmpty && vm.newsToShow.isEmpty{
+                    noNewsYetView
                 } else {
                     LazyVStack {
                         ForEach(vm.newsToShow) { neutralNews in
@@ -125,6 +118,32 @@ struct HomeView: View {
         } label: {
             Label("Filtrar", systemImage: vm.isAnyFilterEnabled ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
+    }
+    
+    var noResultsView: some View {
+        VStack {
+            Spacer()
+            ContentUnavailableView(
+                "No hay resultados para \"\(vm.searchText)\" en noticias de \(vm.daySelected.dayName)",
+                systemImage: "magnifyingglass",
+                description: Text("Prueba con otra búsqueda o selecciona otro día.")
+            )
+            Spacer()
+        }
+        .frame(minHeight: UIScreen.main.bounds.height - 200)
+    }
+    
+    var noNewsYetView: some View {
+        VStack {
+            Spacer()
+            ContentUnavailableView(
+                "No hay noticias de \(vm.daySelected.dayName) aún",
+                systemImage: "newspaper",
+                description: Text("Prueba en unos minutos o selecciona otro día.")
+            )
+            Spacer()
+        }
+        .frame(minHeight: UIScreen.main.bounds.height - 300)
     }
 }
 
