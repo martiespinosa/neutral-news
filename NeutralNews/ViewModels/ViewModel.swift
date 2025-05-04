@@ -51,15 +51,20 @@ final class ViewModel: NSObject {
             
             let fetchedNeutralNews = documents.compactMap { doc -> NeutralNews? in
                 let data = doc.data()
+                let docID = doc.documentID
+                
                 guard let neutralTitle = data["neutral_title"] as? String,
                       let neutralDescription = data["neutral_description"] as? String,
-                      let group = data["group"] as? Int,
                       let category = data["category"] as? String,
+                      let relevance = data["relevance"] as? Int?,
                       let imageUrl = data["image_url"] as? String?,
+                      let imageMedium = data["image_medium"] as? String?,
+                      let date = data["date"] as? Timestamp?,
                       let createdAt = data["created_at"] as? Timestamp,
-                      let updatedAt = data["updated_at"] as? Timestamp
+                      let updatedAt = data["updated_at"] as? Timestamp,
+                      let group = data["group"] as? Int
                 else {
-                    print("Error parsing neutral news document")
+                    print("Error parsing neutral news document: \(docID)")
                     return nil
                 }
                 
@@ -67,7 +72,10 @@ final class ViewModel: NSObject {
                     neutralTitle: neutralTitle,
                     neutralDescription: neutralDescription,
                     category: category,
+                    relevance: relevance,
                     imageUrl: imageUrl,
+                    imageMedium: imageMedium,
+                    date: date?.dateValue(),
                     createdAt: createdAt.dateValue(),
                     updatedAt: updatedAt.dateValue(),
                     group: group
