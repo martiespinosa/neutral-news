@@ -16,20 +16,20 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if vm.searchText.isEmpty == false && vm.filteredNews.isEmpty {
+                if vm.searchText.isEmpty == false && vm.newsToShow.isEmpty {
                     VStack {
                         Spacer()
                         ContentUnavailableView(
-                            "No hay resultados para \"\(vm.searchText)\"",
+                            "No hay resultados para \"\(vm.searchText)\" en noticias de \(vm.daySelected.dayName)",
                             systemImage: "magnifyingglass",
-                            description: Text("Prueba con otra búsqueda o vuelve a intentarlo más tarde.")
+                            description: Text("Prueba con otra búsqueda o selecciona otro día.")
                         )
                         Spacer()
                     }
                     .frame(minHeight: UIScreen.main.bounds.height - 200)
                 } else {
                     LazyVStack {
-                        ForEach(vm.filteredNews) { neutralNews in
+                        ForEach(vm.newsToShow) { neutralNews in
                             NavigationLink {
                                 NeutralNewsView(news: neutralNews, relatedNews: vm.getRelatedNews(from: neutralNews), namespace: animationNamespace)
                                     .navigationTransition(.zoom(sourceID: neutralNews.id, in: animationNamespace))
@@ -60,10 +60,24 @@ struct HomeView: View {
                 vm.fetchNewsFromFirestore()
             }
             .searchable(text: $vm.searchText, prompt: "Buscar")
-            .navigationTitle("Hoy")
+            .navigationTitle(vm.daySelected.dayName)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { dayMenu }
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
+        }
+    }
+    
+    var dayMenu: some View {
+        Menu {
+            ForEach(vm.lastSevenDays) { day in
+                Button(day.dayName) {
+                    vm.changeDay(to: day)
+                }
+
+            }
+        } label: {
+            Label("Cambiar día", systemImage: "calendar")
         }
     }
     

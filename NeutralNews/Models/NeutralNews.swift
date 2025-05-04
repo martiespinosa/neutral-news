@@ -7,7 +7,19 @@
 
 import Foundation
 
-struct NeutralNews: Codable, Identifiable {
+struct NeutralNews: Codable, Hashable, Identifiable {
+    static func == (lhs: NeutralNews, rhs: NeutralNews) -> Bool {
+        lhs.group == rhs.group &&
+        lhs.neutralTitle == rhs.neutralTitle &&
+        lhs.neutralDescription == rhs.neutralDescription
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(group)
+        hasher.combine(neutralTitle)
+        hasher.combine(neutralDescription)
+    }
+    
     var id = UUID().uuidString
     let neutralTitle: String
     let neutralDescription: String

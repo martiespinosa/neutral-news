@@ -104,22 +104,26 @@ enum Media: String, CaseIterable, Codable {
         )
         }
     }
-}
-
-extension String {
-    /// Normalizes the name of the media by converting it to lowercase, removing diacritical marks (accents),
-    /// replacing spaces with hyphens, and removing non-alphanumeric characters.
-    /// This is used to match the media name with the corresponding logo and color in the catalog.
-    ///
-    /// - Returns: A normalized version of the media name, in lowercase and without accents, spaces, or special characters.
-    func normalized() -> String {
-        return self
-            .lowercased()
-            .folding(options: .diacriticInsensitive, locale: .current)
-            .replacingOccurrences(of: " ", with: "-")
-            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
+    
+    static func from(_ rawValue: String) -> Media? {
+        return Media(rawValue: rawValue)
     }
 }
+
+//extension String {
+//    /// Normalizes the name of the media by converting it to lowercase, removing diacritical marks (accents),
+//    /// replacing spaces with hyphens, and removing non-alphanumeric characters.
+//    /// This is used to match the media name with the corresponding logo and color in the catalog.
+//    ///
+//    /// - Returns: A normalized version of the media name, in lowercase and without accents, spaces, or special characters.
+//    func normalized() -> String {
+//        return self
+//            .lowercased()
+//            .folding(options: .diacriticInsensitive, locale: .current)
+//            .replacingOccurrences(of: " ", with: "-")
+//            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
+//    }
+//}
 
 enum Category: String, CaseIterable, Decodable {
     case sinCategoria = "Sin categoría"
