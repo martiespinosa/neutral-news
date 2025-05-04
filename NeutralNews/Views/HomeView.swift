@@ -91,7 +91,7 @@ struct HomeView: View {
                         vm.filterByCategory(category)
                     } label: {
                         Label {
-                            Text(category.rawValue)
+                            Label(category.rawValue, systemImage: category.systemImageName)
                         } icon: {
                             if vm.categoryFilter.contains(category) {
                                 Image(systemName: "checkmark")

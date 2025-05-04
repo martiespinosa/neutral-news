@@ -132,4 +132,19 @@ enum Category: String, CaseIterable, Decodable {
     case deportes = "Deportes"
     case internacional = "Internacional"
     case entretenimiento = "Entretenimiento"
+    
+    var systemImageName: String {
+        switch self {
+        case .sinCategoria: return "questionmark"
+        case .economia: return "eurosign.circle"
+        case .politica: return "building.columns"
+        case .ciencia: return "atom"
+        case .tecnologia: return "pc"
+        case .cultura: return "book.pages"
+        case .sociedad: return "person.2"
+        case .deportes: return "sportscourt"
+        case .internacional: return "globe"
+        case .entretenimiento: return "popcorn"
+        }
+    }
 }
