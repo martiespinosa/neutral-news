@@ -152,7 +152,7 @@ def generate_neutral_analysis_batch(group_batch):
     1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
        informativo y capturar la esencia de la noticia.
     
-    2. Crear una descripción neutral estructurada en párrafos cortos, con un límite aproximado 
+    2. Crear una descripción neutral estructurada en párrafos cortos (máximo 50 palabras por párrafo), con un límite aproximado 
        de 250 palabras en total. El primer párrafo debe contener la información más importante.
     
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
@@ -260,7 +260,7 @@ def generate_neutral_analysis(sources):
     1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
        informativo y capturar la esencia de la noticia.
     
-    2. Crear una descripción neutral estructurada en párrafos cortos, con un límite aproximado 
+    2. Crear una descripción neutral estructurada en párrafos cortos (máximo 50 palabras por párrafo), con un límite aproximado 
        de 250 palabras en total. El primer párrafo debe contener la información más importante.
     
     3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
