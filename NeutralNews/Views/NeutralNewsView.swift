@@ -43,25 +43,38 @@ struct NeutralNewsView: View {
                                 .fontDesign(.serif)
                             
                             AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
-                                switch phase {
-                                case .empty:
-                                    ShimmerView()
-                                        .frame(height: 250)
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFit()
-                                case .failure:
-                                    Image(systemName: "photo")
-                                        .font(.largeTitle)
-                                        .foregroundColor(.gray)
-                                        .frame(height: 250)
-                                @unknown default:
-                                    EmptyView()
+                                VStack(alignment: .leading, spacing: 4) {
+                                    switch phase {
+                                    case .empty:
+                                        ShimmerView()
+                                            .frame(height: 250)
+                                            .clipShape(.rect(cornerRadius: 16))
+                                    case .success(let image):
+                                        VStack(alignment: .leading) {
+                                            image
+                                                .resizable()
+                                                .scaledToFit()
+                                                .clipShape(.rect(cornerRadius: 16))
+                                            
+                                            // TODO: Quitar el opcional cuando todas lo tengan
+                                            if let media = Media.from(news.imageMedium ?? "") {
+                                                Text("Imagen extraída de \(media.pressMedia.name), ver su noticia al final de la página.")
+                                                    .font(.footnote)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                    case .failure:
+                                        Image(systemName: "photo")
+                                            .font(.largeTitle)
+                                            .foregroundColor(.gray)
+                                            .frame(height: 250)
+                                            .clipShape(.rect(cornerRadius: 16))
+                                    @unknown default:
+                                        EmptyView()
+                                    }
                                 }
                             }
                             .frame(maxWidth: .infinity)
-                            .clipShape(.rect(cornerRadius: 16))
                             
                             Text(news.neutralDescription)
 //                                .fontDesign(.serif)
