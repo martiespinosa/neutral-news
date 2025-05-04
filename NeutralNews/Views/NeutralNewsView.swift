@@ -32,7 +32,10 @@ struct NeutralNewsView: View {
 //                                Spacer()
                                 Text(news.category.uppercased())
                                 Spacer()
-                                Text(news.createdAt.formatted(.dateTime.day().month(.wide).hour().minute()).uppercased())
+                                // TODO: Quitar el opcional cuando todas lo tengan
+                                if let date = news.date {
+                                    Text(date.formatted(.dateTime.day().month(.wide).hour().minute()).uppercased())
+                                }
                             }
                             .font(.footnote)
                             .foregroundStyle(.secondary)
