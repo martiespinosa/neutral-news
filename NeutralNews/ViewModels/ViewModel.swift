@@ -413,7 +413,21 @@ final class ViewModel: NSObject {
             }
         }
         
-        newsToShow = newsToFilter.sorted { ($0.date ?? Date.distantPast) > ($1.date ?? Date.distantPast) }
+        newsToShow = newsToFilter.sorted { news1, news2 in
+            if !searchText.isEmpty {
+                let normalizedQuery = searchText.normalizedSearchString()
+                let title1ContainsQuery = news1.neutralTitle.normalizedSearchString().contains(normalizedQuery)
+                let title2ContainsQuery = news2.neutralTitle.normalizedSearchString().contains(normalizedQuery)
+                
+                if title1ContainsQuery && !title2ContainsQuery {
+                    return true
+                } else if !title1ContainsQuery && title2ContainsQuery {
+                    return false
+                }
+            }
+            
+            return (news1.date ?? Date.distantPast) > (news2.date ?? Date.distantPast)
+        }
     }
     
     func clearFilters() {
