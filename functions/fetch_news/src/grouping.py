@@ -2,6 +2,7 @@ import os
 import traceback
 import time
 import shutil # Import shutil for directory removal
+import storage
 # Define a global model variable
 _model = None
 _nlp_modules_loaded = False
@@ -126,7 +127,8 @@ def group_news(noticias_json):
         # Convert to DataFrame
         print("ℹ️ Converting JSON to DataFrame...")
         df = pd.DataFrame(noticias_json)
-                
+        df_embeddings = storage.get_news_not_embedded()
+        
         # Check that the required columns exist
         
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
@@ -166,44 +168,43 @@ def group_news(noticias_json):
         print("ℹ️ Loading embeddings model...")
         
         # Concatenate 'title' and 'scraped_description' into a new column 'noticia_completa'
-        df["noticia_completa"] = df["title"].fillna("") + " " + df["scraped_description"].fillna("")
-        
+        df_embeddings["noticia_completa"] = df_embeddings["title"].fillna("") + " " + df_embeddings["scraped_description"].fillna("")
+
         # Get model with retry support
         model = get_sentence_transformer_model()
 
         print("ℹ️ Generating embeddings...")
-        texts_to_encode = df["noticia_completa"].tolist()
+        texts_to_encode = df_embeddings["noticia_completa"].tolist()
         total_texts = len(texts_to_encode)
-        # Tunable:  128
         batch_size = 256
         embeddings_list = []
+        processed_ids = []  # To store IDs in the same order as embeddings
         start_time_embed = time.time()
         processed_count = 0
         next_log_percentage = 10 # Start logging at 10%
 
         for i in range(0, total_texts, batch_size):
             batch = texts_to_encode[i:min(i + batch_size, total_texts)]
+            batch_ids = news_ids[i:min(i + batch_size, total_texts)]  # Get corresponding IDs for the batch
             # Ensure model.encode is called without its internal progress bar for cleaner logs
             batch_embeddings = model.encode(
                 batch,
                 convert_to_numpy=True,
-                show_progress_bar=False # Disable sentence-transformers internal bar
+                show_progress_bar=False  # Disable sentence-transformers internal bar
             )
             embeddings_list.append(batch_embeddings)
+            processed_ids.extend(batch_ids)  # Append batch IDs to the processed list
             processed_count = min(i + batch_size, total_texts)
 
             # Check if the current progress crossed the next logging threshold
             current_percentage = (processed_count / total_texts) * 100
             if current_percentage >= next_log_percentage:
                 elapsed_time = time.time() - start_time_embed
-                # Use floor on percentage for cleaner logging (e.g., log 10% even if slightly over)
                 log_perc = int(next_log_percentage)
                 print(f"⏳ Embeddings: {log_perc}% complete ({processed_count}/{total_texts} texts). Time elapsed: {elapsed_time:.2f} seconds.")
-                # Set the next target percentage, ensuring it doesn't exceed 100
                 next_log_percentage = min(log_perc + 10, 100)
-                # Handle the case where we might skip a percentage point with a large batch
                 while current_percentage >= next_log_percentage and next_log_percentage <= 100:
-                     next_log_percentage += 10
+                    next_log_percentage += 10
 
 
         # Concatenate embeddings from all batches
@@ -211,18 +212,32 @@ def group_news(noticias_json):
         end_time_embed = time.time()
         # Final log message remains useful
         print(f"✅ Embeddings generated for {total_texts} texts in {end_time_embed - start_time_embed:.2f} seconds.")
-
-                
-        # Parameters for clustering
-        eps = 0.25  # Distance threshold
-        min_samples = 2  # Minimum number of samples in a cluster
-        n_neighbors = min(5, len(df))  # Number of neighbors to consider
         
         print("ℹ️ Normalizing embeddings...")
         # Normalize embeddings to use cosine similarity
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         norms[norms == 0] = 1e-10
         embeddings_norm = embeddings / norms
+
+        embeddings_for_storage = [emb.tolist() for emb in embeddings_norm]
+
+
+        print("ℹ️ Saving normalized embeddings to Firestore...")
+        # Get the IDs of the news items that need embeddings
+
+        # Convert normalized embeddings to a list of lists for Firestore storage
+        # Firestore can't store numpy arrays directly
+        embeddings_for_storage = [emb.tolist() for emb in embeddings_norm]
+
+        # Ensure IDs and embeddings are paired correctly
+        if len(processed_ids) != len(embeddings_for_storage):
+            raise ValueError("Mismatch between the number of IDs and embeddings. Ensure proper alignment.")
+
+        # Save the embeddings to Firestore
+        print("ℹ️ Saving normalized embeddings to Firestore...")
+        updated_count = storage.update_news_embedding(processed_ids, embeddings_for_storage)
+        print(f"✅ Successfully saved {updated_count} normalized embeddings to Firestore.")
+        
         
         print("ℹ️ Calculating nearest neighbors graph...")
 
@@ -244,6 +259,11 @@ def group_news(noticias_json):
         # No need for the manual loop to build the sparse matrix anymore
 
         print("ℹ️ Applying DBSCAN algorithm...")
+
+        # Parameters for clustering
+        eps = 0.25  # Distance threshold
+        min_samples = 2  # Minimum number of samples in a cluster
+        n_neighbors = min(5, len(df))  # Number of neighbors to consider
         # Apply DBSCAN with the precomputed *sorted* sparse distance matrix
         clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
         # Pass the sorted graph directly

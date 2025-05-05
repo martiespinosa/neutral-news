@@ -443,3 +443,45 @@ def is_valid_image_url(url):
     contains_video_pattern = 'video' in url.lower() or 'player' in url.lower()
 
     return is_image and not (is_video or contains_video_pattern)
+
+def get_news_not_embedded():
+    """
+    Get news items that are not embedded in any other news
+    """
+    db = initialize_firebase()
+    
+    # Query for news that are not embedded
+    unembedded_query = db.collection('news').where('embedding', '==', None)
+    
+    # Get the documents
+    unembedded_news_docs = list(unembedded_query.stream())
+    
+    # Convert to a list of dictionaries
+    unembedded_news = [doc.to_dict() for doc in unembedded_news_docs]
+    
+    return unembedded_news
+
+
+def update_news_embedding(news_ids, embeddings):
+    """
+    Update the embeddings list of news items
+    """
+    db = initialize_firebase()
+    batch = db.batch()
+    updated_count = 0
+    
+    for news_id, embedding in zip(news_ids, embeddings):
+        news_ref = db.collection('news').document(news_id)
+        batch.update(news_ref, {"embedding": embedding})
+        updated_count += 1
+        
+        # Firebase has a limit of 500 operations per batch
+        if updated_count % 450 == 0:
+            batch.commit()
+            batch = db.batch()
+    
+    # Commit any remaining updates
+    if updated_count % 450 != 0:
+        batch.commit()
+    
+    return updated_count
