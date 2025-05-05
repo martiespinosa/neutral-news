@@ -76,15 +76,15 @@ struct HomeView: View {
     
     var filterMenu: some View {
         Menu {
-            Menu("Medio") {
-                ForEach(Media.allCases, id: \.self) { media in
+            Menu("Relevancia") {
+                ForEach(Relevance.allCases, id: \.self) { relevance in
                     Button {
-                        vm.filterByMedium(media)
+                        vm.filterByRelevance(relevance)
                     } label: {
                         Label {
-                            Text(media.pressMedia.name)
+                            Text(relevance.description)
                         } icon: {
-                            if vm.mediaFilter.contains(media) {
+                            if vm.relevanceFilter.contains(relevance) {
                                 Image(systemName: "checkmark")
                             }
                         }

@@ -44,6 +44,7 @@ final class ViewModel: NSObject {
         }
     }
     var mediaFilter: Set<Media> = []
+    var relevanceFilter: Set<Relevance> = []
     var categoryFilter: Set<Category> = []
     var isAnyFilterEnabled: Bool {
         !mediaFilter.isEmpty || !categoryFilter.isEmpty
@@ -384,6 +385,15 @@ final class ViewModel: NSObject {
         applyFilters()
     }
     
+    func filterByRelevance(_ relevance: Relevance) {
+        if relevanceFilter.contains(relevance) {
+            relevanceFilter.remove(relevance)
+        } else {
+            relevanceFilter.insert(relevance)
+        }
+        applyFilters()
+    }
+    
     func filterByCategory(_ category: Category) {
         if categoryFilter.contains(category) {
             categoryFilter.remove(category)
@@ -396,12 +406,15 @@ final class ViewModel: NSObject {
     func applyFilters() {
         var newsToFilter = daySelectedNews
         
-        if !mediaFilter.isEmpty || !categoryFilter.isEmpty {
+        if !mediaFilter.isEmpty || !relevanceFilter.isEmpty || !categoryFilter.isEmpty {
             newsToFilter = newsToFilter.filter { news in
+                let matchesRelevance = relevanceFilter.isEmpty || relevanceFilter.contains { relevance in
+                    news.relevance == relevance.rawValue
+                }
                 let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
                     news.category.normalized() == category.rawValue.normalized()
                 }
-                return matchesCategory
+                return matchesRelevance && matchesCategory
             }
         }
         
