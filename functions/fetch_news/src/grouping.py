@@ -127,8 +127,8 @@ def group_news(noticias_json):
         # Convert to DataFrame
         print("ℹ️ Converting JSON to DataFrame...")
         df = pd.DataFrame(noticias_json)
-        df_embeddings = storage.get_news_not_embedded()
-        
+        df_embeddings = pd.DataFrame(storage.get_news_not_embedded())        
+
         # Check that the required columns exist
         
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
@@ -175,6 +175,7 @@ def group_news(noticias_json):
 
         print("ℹ️ Generating embeddings...")
         texts_to_encode = df_embeddings["noticia_completa"].tolist()
+        news_ids = df_embeddings["id"].tolist()  # Extract IDs to pair with embeddings
         total_texts = len(texts_to_encode)
         batch_size = 256
         embeddings_list = []
