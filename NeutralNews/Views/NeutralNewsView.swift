@@ -116,7 +116,6 @@ struct NeutralNewsView: View {
                     ShareLink(item: URL(string: "https://www.apple.com")!) {
                         Label("Compartir", systemImage: "square.and.arrow.up")
                     }
-
                 }
             }
         }

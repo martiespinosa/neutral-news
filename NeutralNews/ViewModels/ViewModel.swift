@@ -33,7 +33,7 @@ final class ViewModel: NSObject {
         }
     }
     var newsToShow = [NeutralNews]()
-    var isLoafingNeutralNews = false
+    var isLoadingNeutralNews = false
     
     // MARK: - Search and Filter
     var searchText: String = "" {
@@ -119,7 +119,7 @@ final class ViewModel: NSObject {
     
     // MARK: - Firestore Methods
     func fetchNeutralNewsFromFirestore() {
-        isLoafingNeutralNews = true
+        isLoadingNeutralNews = true
         
         let db = Firestore.firestore()
         db.collection("neutral_news").getDocuments { [weak self] snapshot, error in
@@ -127,13 +127,13 @@ final class ViewModel: NSObject {
             
             if let error = error {
                 print("Error fetching neutral news: \(error.localizedDescription)")
-                self.isLoafingNeutralNews = false
+                self.isLoadingNeutralNews = false
                 return
             }
             
             guard let documents = snapshot?.documents else {
                 print("No neutral news found in Firestore")
-                self.isLoafingNeutralNews = false
+                self.isLoadingNeutralNews = false
                 return
             }
             
@@ -179,7 +179,7 @@ final class ViewModel: NSObject {
                     self.filterGroupedNews()
                 }
                 
-                self.isLoafingNeutralNews = false
+                self.isLoadingNeutralNews = false
             }
         }
     }

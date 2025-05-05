@@ -16,9 +16,9 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if !vm.searchText.isEmpty && vm.newsToShow.isEmpty {
+                if !vm.searchText.isEmpty && vm.newsToShow.isEmpty && !vm.isLoadingNeutralNews {
                     noResultsView
-                } else if vm.searchText.isEmpty && vm.newsToShow.isEmpty{
+                } else if vm.searchText.isEmpty && vm.newsToShow.isEmpty && !vm.isLoadingNeutralNews {
                     noNewsYetView
                 } else {
                     LazyVStack {
@@ -37,7 +37,7 @@ struct HomeView: View {
                     .padding(.horizontal)
                 }
                 
-                if vm.isLoafingNeutralNews {
+                if vm.isLoadingNeutralNews {
                     VStack {
                         Spacer()
                         ProgressView()
