@@ -2,7 +2,9 @@ import os
 import traceback
 import time
 import shutil # Import shutil for directory removal
-import storage
+from .storage import get_all_embeddings
+from .storage import update_news_embedding
+from .storage import get_news_not_embedded
 # Define a global model variable
 _model = None
 _nlp_modules_loaded = False
@@ -126,7 +128,7 @@ def group_news(noticias_json):
         # Convert to DataFrame
         print("ℹ️ Converting JSON to DataFrame...")
         df = pd.DataFrame(noticias_json)
-        df_embeddings = pd.DataFrame(storage.get_news_not_embedded())        
+        df_embeddings = pd.DataFrame(get_news_not_embedded())        
 
         # Check that the required columns exist
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
@@ -217,12 +219,12 @@ def group_news(noticias_json):
                 embeddings_for_storage = [emb.tolist() for emb in new_embeddings]
                 
                 print("ℹ️ Saving new embeddings to Firestore...")
-                updated_count = storage.update_news_embedding(processed_ids, embeddings_for_storage)
+                updated_count = update_news_embedding(processed_ids, embeddings_for_storage)
                 print(f"✅ Successfully saved {updated_count} embeddings to Firestore.")
             
         # STEP 2: Fetch ALL embeddings from storage (including the ones we just saved)
         print("ℹ️ Fetching ALL embeddings from storage...")
-        embeddings_data = storage.get_all_embeddings()
+        embeddings_data = get_all_embeddings()
         
         if not embeddings_data or len(embeddings_data) == 0:
             print("❌ No embeddings available for clustering")
