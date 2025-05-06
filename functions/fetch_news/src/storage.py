@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 from .config import initialize_firebase
+import pandas as pd
 
 def store_news_in_firestore(news_list):
     """
@@ -66,6 +67,8 @@ def get_news_for_grouping():
             description_text = data["scraped_description"]
         elif "description" in data:
             description_text = data["description"]
+        else:
+            continue  # Skip if neither field is present
         
         news_item = {
             "id": data["id"],
@@ -444,66 +447,87 @@ def is_valid_image_url(url):
 
     return is_image and not (is_video or contains_video_pattern)
 
-def get_news_not_embedded():
+def get_news_not_embedded(input_df: pd.DataFrame) -> list:
     """
-    Get news items that do not have an 'embedding' field or where 'embedding' is null.
-    This primarily targets news items that are candidates for grouping (e.g., 'group' is None).
-    Returns a list of full news dictionaries for items needing embeddings.
+    Filters a DataFrame to get news items that do not have an 'embedding' field 
+    or where 'embedding' is null.
+    Returns a list of dictionaries for items needing embeddings.
     """
-    db = initialize_firebase()
-    
-    # Step 1: Identify candidate news items.
-    candidate_query = db.collection('news')
-    candidate_docs = list(candidate_query.stream())
-    
     news_needing_embedding = []
-    for doc in candidate_docs:
-        data = doc.to_dict()
+    
+    # Iterate over DataFrame rows
+    for index, row in input_df.iterrows():
+        # row is a Pandas Series representing a row
         
-        # Step 2: Check if the 'embedding' field is missing or explicitly null for these candidates.
-        if data.get("embedding") is None:
-            # Ensure the document has an 'id' field; if not, add it from doc.id
-            # This is important if grouping.py relies on an 'id' key within the dictionary
-            if "id" not in data:
-                data["id"] = doc.id
-            
-            # Ensure 'scraped_description' or 'description' is present for embedding generation
-            # If grouping.py handles missing descriptions gracefully, this explicit check might be optional
-            if not data.get("scraped_description") and not data.get("description"):
-                print(f"Warning: News item with ID {data.get('id', doc.id)} is missing both 'scraped_description' and 'description'. Embedding quality might be affected.")
-                # Optionally, you could skip this item or provide a default empty string
-                # data["scraped_description"] = "" # Example: provide a default
+        # Check if 'embedding' column exists and if its value for this row is None,
+        # or if the 'embedding' column doesn't exist at all for this df.
+        # We also need to handle if the 'embedding' field might not even be a column yet.
+        embedding_value = None
+        if "embedding" in row: # Check if 'embedding' key exists in the Series/row
+            embedding_value = row["embedding"]
 
-            news_needing_embedding.append(data) # Append the full dictionary
+        if pd.isna(embedding_value): # pd.isna handles None, np.nan, etc.
             
-    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items (full docs) presumed to need embeddings.")
+            # Construct a dictionary from the row's data
+            # This dictionary will be part of the list returned
+            data_dict = row.to_dict()
+
+            # Ensure 'id' is present
+            if "id" not in data_dict or pd.isna(data_dict.get("id")):
+                continue 
+
+            # Ensure 'scraped_description' or 'description' is present
+            if pd.isna(data_dict.get("scraped_description")) and pd.isna(data_dict.get("description")):
+                continue
+
+            news_needing_embedding.append(data_dict)
+            
+    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items to process for embeddings.")
     return news_needing_embedding
 
 
 def update_news_embedding(news_ids, embeddings):
     """
-    Update the embeddings list of news items
+    Update the embeddings list of news items in smaller batches.
     """
     db = initialize_firebase()
-    batch = db.batch()
-    updated_count = 0
-    
-    for news_id, embedding in zip(news_ids, embeddings):
-        news_ref = db.collection('news').document(news_id)
-        batch.update(news_ref, {"embedding": embedding})
-        updated_count += 1
-        
-        # Firebase has a limit of 500 operations per batch
-        if updated_count % 450 == 0:
-            batch.commit()
-            batch = db.batch()
-    
-    # Commit any remaining updates
-    if updated_count % 450 != 0:
-        batch.commit()
-    
-    return updated_count
+    if len(news_ids) != len(embeddings):
+        print("Error: Mismatch between number of news IDs and embeddings.")
+        return 0
 
+    updated_count = 0
+    # Firestore batch limit is 500 operations.
+    # Each update is one operation.
+    batch_size = 499 # Keep it slightly below the limit for safety
+
+    for i in range(0, len(news_ids), batch_size):
+        batch = db.batch()
+        # Get the current slice of IDs and embeddings
+        current_news_ids_batch = news_ids[i:i + batch_size]
+        current_embeddings_batch = embeddings[i:i + batch_size]
+
+        for news_id, embedding_list in zip(current_news_ids_batch, current_embeddings_batch):
+            if not news_id: # Skip if news_id is None or empty
+                print(f"Warning: Skipping update for empty news_id.")
+                continue
+            try:
+                news_ref = db.collection('news').document(str(news_id)) # Ensure news_id is a string
+                batch.update(news_ref, {'embedding': embedding_list})
+            except Exception as e:
+                print(f"Error preparing update for news_id {news_id}: {e}")
+                # Optionally, decide if you want to skip this item or halt the batch
+
+        try:
+            batch.commit()
+            updated_count += len(current_news_ids_batch) # Count successful updates in this batch
+            print(f"Successfully committed batch of {len(current_news_ids_batch)} embedding updates. Total updated: {updated_count}")
+        except Exception as e:
+            print(f"Error committing batch: {e}")
+            # Handle commit error, e.g., log it, retry individual items, or raise
+            # For simplicity, we're just printing here.
+            # You might want to add more sophisticated error handling or retry logic.
+            
+    return updated_count
 def get_all_embeddings():
     """
     Get all embeddings from the 'news' collection

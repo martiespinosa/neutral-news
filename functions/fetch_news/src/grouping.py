@@ -163,7 +163,7 @@ def group_news(noticias_json):
             df.loc[~df["is_reference"], "group"] = 0
             return df[["id", "group"]].to_dict(orient='records')
         
-        df_embeddings = pd.DataFrame(get_news_not_embedded())        
+        df_embeddings = pd.DataFrame(get_news_not_embedded(df))        
 
         # STEP 1: Generate embeddings for new news items only
         if len(df_embeddings) > 0:
