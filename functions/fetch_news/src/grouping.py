@@ -128,14 +128,13 @@ def group_news(noticias_json):
         # Convert to DataFrame
         print("ℹ️ Converting JSON to DataFrame...")
         df = pd.DataFrame(noticias_json)
-        df_embeddings = pd.DataFrame(get_news_not_embedded())        
 
         # Check that the required columns exist
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
             raise ValueError("The JSON must contain the columns 'id', 'title' and 'scraped_description' with the text of the news")
         
         # Prepare column for new groups
-        df["group"] = None
+        df["group"] = None 
         
         print("ℹ️ Checking for existing groups...")
         # Preserve existing groups
@@ -163,6 +162,8 @@ def group_news(noticias_json):
         if len(df[~df["is_reference"]]) <= 1 and not has_reference_news:
             df.loc[~df["is_reference"], "group"] = 0
             return df[["id", "group"]].to_dict(orient='records')
+        
+        df_embeddings = pd.DataFrame(get_news_not_embedded())        
 
         # STEP 1: Generate embeddings for new news items only
         if len(df_embeddings) > 0:

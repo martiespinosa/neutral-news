@@ -446,20 +446,38 @@ def is_valid_image_url(url):
 
 def get_news_not_embedded():
     """
-    Get news items that are not embedded in any other news
+    Get news items that do not have an 'embedding' field or where 'embedding' is null.
+    This primarily targets news items that are candidates for grouping (e.g., 'group' is None).
+    Returns a list of full news dictionaries for items needing embeddings.
     """
     db = initialize_firebase()
     
-    # Query for news that are not embedded
-    unembedded_query = db.collection('news').where('embedding', '==', None)
+    # Step 1: Identify candidate news items.
+    candidate_query = db.collection('news')
+    candidate_docs = list(candidate_query.stream())
     
-    # Get the documents
-    unembedded_news_docs = list(unembedded_query.stream())
-    
-    # Convert to a list of dictionaries
-    unembedded_news = [doc.to_dict() for doc in unembedded_news_docs]
-    
-    return unembedded_news
+    news_needing_embedding = []
+    for doc in candidate_docs:
+        data = doc.to_dict()
+        
+        # Step 2: Check if the 'embedding' field is missing or explicitly null for these candidates.
+        if data.get("embedding") is None:
+            # Ensure the document has an 'id' field; if not, add it from doc.id
+            # This is important if grouping.py relies on an 'id' key within the dictionary
+            if "id" not in data:
+                data["id"] = doc.id
+            
+            # Ensure 'scraped_description' or 'description' is present for embedding generation
+            # If grouping.py handles missing descriptions gracefully, this explicit check might be optional
+            if not data.get("scraped_description") and not data.get("description"):
+                print(f"Warning: News item with ID {data.get('id', doc.id)} is missing both 'scraped_description' and 'description'. Embedding quality might be affected.")
+                # Optionally, you could skip this item or provide a default empty string
+                # data["scraped_description"] = "" # Example: provide a default
+
+            news_needing_embedding.append(data) # Append the full dictionary
+            
+    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items (full docs) presumed to need embeddings.")
+    return news_needing_embedding
 
 
 def update_news_embedding(news_ids, embeddings):
