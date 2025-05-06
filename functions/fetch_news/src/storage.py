@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 from .config import initialize_firebase
-import pandas as pd
 
 def store_news_in_firestore(news_list):
     """
@@ -447,44 +446,6 @@ def is_valid_image_url(url):
     contains_video_pattern = 'video' in url.lower() or 'player' in url.lower()
 
     return is_image and not (is_video or contains_video_pattern)
-
-def get_news_not_embedded(input_df: pd.DataFrame) -> list:
-    """
-    Filters a DataFrame to get news items that do not have an 'embedding' field 
-    or where 'embedding' is null.
-    Returns a list of dictionaries for items needing embeddings.
-    """
-    news_needing_embedding = []
-    
-    # Iterate over DataFrame rows
-    for index, row in input_df.iterrows():
-        # row is a Pandas Series representing a row
-        
-        # Check if 'embedding' column exists and if its value for this row is None,
-        # or if the 'embedding' column doesn't exist at all for this df.
-        # We also need to handle if the 'embedding' field might not even be a column yet.
-        embedding_value = None
-        if "embedding" in row: # Check if 'embedding' key exists in the Series/row
-            embedding_value = row["embedding"]
-
-        if pd.isna(embedding_value): # pd.isna handles None, np.nan, etc.
-            
-            # Construct a dictionary from the row's data
-            # This dictionary will be part of the list returned
-            data_dict = row.to_dict()
-
-            # Ensure 'id' is present
-            if "id" not in data_dict or pd.isna(data_dict.get("id")):
-                continue 
-
-            # Ensure 'scraped_description' or 'description' is present
-            if pd.isna(data_dict.get("scraped_description")) and pd.isna(data_dict.get("description")):
-                continue
-
-            news_needing_embedding.append(data_dict)
-            
-    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items to process for embeddings.")
-    return news_needing_embedding
 
 
 def update_news_embedding(news_ids, embeddings):

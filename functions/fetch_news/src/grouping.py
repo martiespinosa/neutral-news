@@ -425,3 +425,42 @@ def extract_titles_and_descriptions(df_embeddings):
             # If both are empty, it will result in an empty string for the description part.
     descriptions = desc1.where(desc1 != "", desc2)
     return titles,descriptions
+
+
+def get_news_not_embedded(input_df: pd.DataFrame) -> list:
+    """
+    Filters a DataFrame to get news items that do not have an 'embedding' field 
+    or where 'embedding' is null/NaN.
+    Returns a list of dictionaries for items needing embeddings.
+    """
+    news_needing_embedding = []
+    
+    # Iterate over DataFrame rows
+    for index, row in input_df.iterrows():
+        # row is a Pandas Series representing a row
+        
+        embedding_present_and_valid = False
+        if "embedding" in row and not pd.isna(row["embedding"]):
+            # Check if it's a list-like structure and not empty (basic check for a populated embedding)
+            if isinstance(row["embedding"], (list, np.ndarray)) and len(row["embedding"]) > 0:
+                embedding_present_and_valid = True
+            # Add more specific checks if needed, e.g., all elements are numbers
+
+        if not embedding_present_and_valid:
+            # This row needs an embedding
+            data_dict = row.to_dict()
+
+            # Ensure 'id' is present
+            if "id" not in data_dict or pd.isna(data_dict.get("id")):
+                # print(f"Warning: Item at index {index} missing 'id'. Skipping.")
+                continue 
+
+            # Ensure 'scraped_description' or 'description' is present
+            if pd.isna(data_dict.get("scraped_description")) and pd.isna(data_dict.get("description")):
+                # print(f"Warning: Item with ID {data_dict.get('id')} missing description. Skipping.")
+                continue
+
+            news_needing_embedding.append(data_dict)
+            
+    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items to process for embeddings.")
+    return news_needing_embedding
