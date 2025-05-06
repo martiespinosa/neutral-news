@@ -74,7 +74,8 @@ def get_news_for_grouping():
             "id": data["id"],
             "title": data["title"],
             "scraped_description": description_text,
-            "source_medium": data["source_medium"]
+            "source_medium": data["source_medium"],
+            "embedding": data["embedding"] if "embedding" in data else None,
         }
         
         # Añadir grupo existente si lo tiene
