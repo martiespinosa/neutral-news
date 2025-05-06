@@ -498,34 +498,45 @@ def update_news_embedding(news_ids, embeddings):
     updated_count = 0
     # Firestore batch limit is 500 operations.
     # Each update is one operation.
-    batch_size = 499 # Keep it slightly below the limit for safety
+    # SIGNIFICANTLY REDUCE BATCH SIZE due to large embedding data
+    batch_size = 50 # Start with a much smaller value, e.g., 50, 20, or even 10
+                    # Experiment to find what works.
 
     for i in range(0, len(news_ids), batch_size):
         batch = db.batch()
         # Get the current slice of IDs and embeddings
         current_news_ids_batch = news_ids[i:i + batch_size]
         current_embeddings_batch = embeddings[i:i + batch_size]
+        
+        current_batch_operation_count = 0 # To track operations in this specific batch
 
         for news_id, embedding_list in zip(current_news_ids_batch, current_embeddings_batch):
             if not news_id: # Skip if news_id is None or empty
                 print(f"Warning: Skipping update for empty news_id.")
                 continue
             try:
+                # Ensure embedding_list is not excessively large for a single document
+                # (Firestore document limit is ~1MB)
+                # If individual embeddings are too large, that's a separate issue.
                 news_ref = db.collection('news').document(str(news_id)) # Ensure news_id is a string
                 batch.update(news_ref, {'embedding': embedding_list})
+                current_batch_operation_count +=1
             except Exception as e:
                 print(f"Error preparing update for news_id {news_id}: {e}")
                 # Optionally, decide if you want to skip this item or halt the batch
 
-        try:
-            batch.commit()
-            updated_count += len(current_news_ids_batch) # Count successful updates in this batch
-            print(f"Successfully committed batch of {len(current_news_ids_batch)} embedding updates. Total updated: {updated_count}")
-        except Exception as e:
-            print(f"Error committing batch: {e}")
-            # Handle commit error, e.g., log it, retry individual items, or raise
-            # For simplicity, we're just printing here.
-            # You might want to add more sophisticated error handling or retry logic.
+        if current_batch_operation_count > 0: # Only commit if there are operations in the batch
+            try:
+                batch.commit()
+                updated_count += current_batch_operation_count 
+                print(f"Successfully committed batch of {current_batch_operation_count} embedding updates. Total updated: {updated_count}")
+            except Exception as e:
+                print(f"Error committing batch (size {current_batch_operation_count}): {e}")
+                # Handle commit error, e.g., log it, retry individual items, or raise
+                # For simplicity, we're just printing here.
+                # You might want to add more sophisticated error handling or retry logic.
+        else:
+            print("Skipping commit for an empty batch.")
             
     return updated_count
 def get_all_embeddings():

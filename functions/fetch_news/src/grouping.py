@@ -1,7 +1,6 @@
 import os
 import traceback
 import time
-import shutil # Import shutil for directory removal
 from .storage import get_all_embeddings
 from .storage import update_news_embedding
 from .storage import get_news_not_embedded
@@ -35,7 +34,7 @@ def get_sentence_transformer_model(retry_count=3):
     if _model is not None:
         return _model
 
-    model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     # Path where the model is expected to be in the Docker image
     bundled_model_path = "/app/model"
 
@@ -48,12 +47,12 @@ def get_sentence_transformer_model(retry_count=3):
                 print(f"✅ Model loaded successfully from bundled path: {bundled_model_path}")
                 return _model
             else:
-                 print(f"⚠️ Bundled model path not found: {bundled_model_path}. Falling back to download.")
+                 print(f"⚠️ Bundled model path not found: {bundled_model_path}")
         except Exception as e:
             print(f"⚠️ Failed to load model from bundled path {bundled_model_path}: {type(e).__name__}: {str(e)}")
-            print("ℹ️ Falling back to downloading the model.")
+            # print("ℹ️ Falling back to downloading the model.")  # Uncommented this line
             # If loading from bundled path fails, proceed to download logic below
-
+    """
     # --- Attempt 2: Download model (Fallback or Local) ---
     cache_dir = None
     if os.getenv("FUNCTION_TARGET"):
@@ -114,9 +113,9 @@ def get_sentence_transformer_model(retry_count=3):
             wait_time = 2 ** attempt
             print(f"ℹ️ Retrying download in {wait_time} seconds...")
             time.sleep(wait_time)
-
+    """
     return _model
-def group_news(noticias_json):
+def group_news(news_list: list):
     """
     Groups news based on their semantic similarity
     """
@@ -126,8 +125,8 @@ def group_news(noticias_json):
         _load_nlp_modules()
         
         # Convert to DataFrame
-        print("ℹ️ Converting JSON to DataFrame...")
-        df = pd.DataFrame(noticias_json)
+        print("ℹ️ Converting List to DataFrame...")
+        df = pd.DataFrame(news_list)
 
         # Check that the required columns exist
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
@@ -168,13 +167,14 @@ def group_news(noticias_json):
         # STEP 1: Generate embeddings for new news items only
         if len(df_embeddings) > 0:
             print("ℹ️ Loading embeddings model...")
-            
-            # Concatenate 'title' and 'scraped_description' into a new column 'noticia_completa'
-            df_embeddings["noticia_completa"] = df_embeddings["title"].fillna("") + " " + df_embeddings["scraped_description"].fillna("")
 
             # Get model with retry support
             model = get_sentence_transformer_model()
-
+            
+            print("ℹ️ Extracting titles and descriptions...")
+            titles, descriptions = extract_titles_and_descriptions(df_embeddings)
+            df_embeddings["noticia_completa"] = titles + " " + descriptions
+            
             print("ℹ️ Generating embeddings for new news items...")
             texts_to_encode = df_embeddings["noticia_completa"].tolist()
             news_ids = df_embeddings["id"].tolist()  # Extract IDs to pair with embeddings
@@ -404,3 +404,24 @@ def group_news(noticias_json):
         print(f"❌ Error in group_news: {str(e)}")
         traceback.print_exc()
         raise
+
+def extract_titles_and_descriptions(df_embeddings):
+    titles = df_embeddings["title"].fillna("")
+            
+            # Prioritize 'scraped_description', then 'description', then empty string
+            # Check if 'scraped_description' column exists
+    if "scraped_description" in df_embeddings.columns:
+        desc1 = df_embeddings["scraped_description"].fillna("")
+    else:
+        desc1 = pd.Series([""] * len(df_embeddings), index=df_embeddings.index) # Series of empty strings
+
+            # Check if 'description' column exists
+    if "description" in df_embeddings.columns:
+        desc2 = df_embeddings["description"].fillna("")
+    else:
+        desc2 = pd.Series([""] * len(df_embeddings), index=df_embeddings.index) # Series of empty strings
+                
+            # Use scraped_description if it's not empty, otherwise use description
+            # If both are empty, it will result in an empty string for the description part.
+    descriptions = desc1.where(desc1 != "", desc2)
+    return titles,descriptions
