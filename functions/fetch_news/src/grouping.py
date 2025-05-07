@@ -205,10 +205,20 @@ def group_news(news_list: list):
                     print(f"✅ Saved new embeddings to Firestore.")
 
                     # Add these newly generated embeddings to our main 'all_items_for_clustering_df'
+                    # and to the original 'df'
                     for idx, news_id in enumerate(news_ids_for_new_embeddings):
-                        all_items_for_clustering_df.loc[all_items_for_clustering_df['id'] == news_id, 'embedding_vector'] = [new_embeddings_np[idx]]
-                        # Also update the original 'df' so it has the latest embeddings for these items
-                        df.loc[df['id'] == news_id, 'embedding'] = [new_embeddings_np[idx].tolist()]
+                        current_embedding_np = new_embeddings_np[idx]
+                        current_embedding_list = current_embedding_np.tolist()
+
+                        # Update 'all_items_for_clustering_df.embedding_vector'
+                        # Each cell should store a list containing the numpy array: [np.array(...)]
+                        target_indices_all_items = all_items_for_clustering_df[all_items_for_clustering_df['id'] == news_id].index
+                        for i_loc in target_indices_all_items:
+                            all_items_for_clustering_df.at[i_loc, 'embedding_vector'] = [current_embedding_np]
+                        
+                        # Update 'df.embedding'
+                        # Each cell should store the flat list of floats: [float, float, ...]
+                        df.loc[df['id'] == news_id, 'embedding'] = current_embedding_list
 
 
         # STEP 2: Populate 'embedding_vector' for items in 'all_items_for_clustering_df'
@@ -443,7 +453,7 @@ def extract_titles_and_descriptions(df_embeddings):
         desc2 = df_embeddings["description"].fillna("")
     else:
         desc2 = pd.Series([""] * len(df_embeddings), index=df_embeddings.index) # Series of empty strings
-                
+                 
             # Use scraped_description if it's not empty, otherwise use description
             # If both are empty, it will result in an empty string for the description part.
     descriptions = desc1.where(desc1 != "", desc2)
