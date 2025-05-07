@@ -326,10 +326,18 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
             desc_len = len(desc.split()) if desc else 0
 
             if scraper.needs_scraping(desc_len) and link:
-                if robots_checker.can_fetch(link):
-                    scr_desc = scraper.scrape_content(link)
-                else:
-                    scraper.error_counts["blocked_by_robots"] += 1
+                try:
+                    can_fetch_result = robots_checker.can_fetch(link)
+                    if can_fetch_result is True: # Explicitly check for True
+                        scr_desc = scraper.scrape_content(link)
+                    else:
+                        scraper.error_counts["blocked_by_robots"] += 1
+                        if isinstance(can_fetch_result, tuple) and len(can_fetch_result) == 2:
+                             scraper.logger.warning(f"Blocked by robots.txt: {link} - Reason: {can_fetch_result[1]}")
+                except Exception as r_exc:
+                    scraper.logger.error(f"Exception during robots_checker.can_fetch for link {link}: {r_exc}", exc_info=True)
+                    # Decide how to handle: maybe scr_desc remains "" or you skip scraping
+                    # This exception would otherwise be caught by the main try-except of process_item
 
             return News(
                 title=title,
@@ -342,6 +350,20 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
                 source_medium=medium
             )
         except Exception as e:
+            # Enhanced logging for diagnosis
+            error_link_info = "Unknown link"
+            error_title_info = "Unknown title"
+            try:
+                l_tag = item.find('link')
+                if l_tag is not None and l_tag.text:
+                    error_link_info = l_tag.text.strip()
+                t_tag = item.find('title')
+                if t_tag is not None and t_tag.text:
+                    error_title_info = t_tag.text.strip()
+            except:
+                pass # Ignore errors trying to get details for logging
+
+            scraper.logger.error(f"Error processing item for medium {medium} (Link: '{error_link_info}', Title: '{error_title_info}'): {e}", exc_info=True)
             return None
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

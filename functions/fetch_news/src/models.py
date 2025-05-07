@@ -63,6 +63,7 @@ class News:
         self.source_medium = source_medium
         self.group = None
         self.created_at = datetime.now()
+        self.embedding = None
 
     def to_dict(self):
         return {
@@ -76,5 +77,6 @@ class News:
             "pub_date": self.pub_date,
             "source_medium": self.source_medium,
             "group": self.group,
-            "created_at": self.created_at
+            "created_at": self.created_at,
+            "embedding": self.embedding
         }
