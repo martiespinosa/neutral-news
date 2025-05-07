@@ -339,8 +339,7 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
                 image_url=img,
                 link=link,
                 pub_date=pub,
-                source_medium=medium,
-                embedding=None
+                source_medium=medium
             )
         except Exception as e:
             return None

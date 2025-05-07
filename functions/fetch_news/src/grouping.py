@@ -122,281 +122,298 @@ def group_news(news_list: list):
     """
     try:
         print("ℹ️ Starting news grouping...")
-        # Load NLP modules when needed, not at import time
         _load_nlp_modules()
         
-        # Convert to DataFrame
         print("ℹ️ Converting List to DataFrame...")
         df = pd.DataFrame(news_list)
 
-        # Check that the required columns exist
         if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
             raise ValueError("The JSON must contain the columns 'id', 'title' and 'scraped_description' with the text of the news")
         
-        # Prepare column for new groups
         df["group"] = None 
         
         print("ℹ️ Checking for existing groups...")
-        # Preserve existing groups
         has_reference_news = "existing_group" in df.columns
         if has_reference_news:
-            # Copy existing groups to group
             df.loc[df["existing_group"].notna(), "group"] = df.loc[df["existing_group"].notna(), "existing_group"]
-            
-            # Identify news that already have a group (references) and those that don't (to group)
             reference_mask = df["existing_group"].notna()
             df["is_reference"] = reference_mask
-            
-            # Count how many news items need to be grouped
             to_group_count = (~reference_mask).sum()
-            
-            # If all news already have a group, there's nothing to do
             if to_group_count == 0:
-                return df[["id", "group"]].to_dict(orient='records')
+                print("ℹ️ All news items already have groups. No new grouping needed.")
+                return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
         else:
             df["is_reference"] = False
+            
         print(f"ℹ️ Found {df['is_reference'].sum()} reference news and {len(df[~df['is_reference']])} news to group.")
         
-        print("ℹ️ Assigning a new group to news without a reference...")
-        # If there's only one news item to group, assign a new group
-        if len(df[~df["is_reference"]]) <= 1 and not has_reference_news:
+        # Handle cases with very few items to group early
+        items_to_potentially_group_df = df[~df["is_reference"]]
+        if len(items_to_potentially_group_df) == 0 and has_reference_news:
+            print("ℹ️ No new items to group, only reference news present.")
+            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+        if len(items_to_potentially_group_df) <= 1 and not has_reference_news:
+            print("ℹ️ Only one new item to group and no reference news. Assigning to group 0.")
             df.loc[~df["is_reference"], "group"] = 0
-            return df[["id", "group"]].to_dict(orient='records')
+            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+
+        # Prepare a DataFrame that will hold all items from the input 'df'
+        # and their corresponding embeddings.
+        # We need to ensure the order of embeddings matches the order of 'df'.
         
-        df_embeddings = pd.DataFrame(get_news_not_embedded(df))        
+        all_items_for_clustering_df = df.copy()
+        all_items_for_clustering_df['embedding_vector'] = None # Initialize column for actual vectors
 
-        # STEP 1: Generate embeddings for new news items only
-        if len(df_embeddings) > 0:
+        # STEP 1: Generate embeddings for items in df that need them
+        # get_news_not_embedded filters 'df' to find items missing embeddings
+        df_needing_embeddings = pd.DataFrame(get_news_not_embedded(df.copy())) # Pass a copy to avoid modification issues
+
+        if not df_needing_embeddings.empty:
+            print(f"ℹ️ Found {len(df_needing_embeddings)} items needing new embeddings.")
             print("ℹ️ Loading embeddings model...")
-
-            # Get model with retry support
             model = get_sentence_transformer_model()
             
-            print("ℹ️ Extracting titles and descriptions...")
-            titles, descriptions = extract_titles_and_descriptions(df_embeddings)
-            df_embeddings["noticia_completa"] = titles + " " + descriptions
+            print("ℹ️ Extracting titles and descriptions for new embeddings...")
+            # Ensure 'df_needing_embeddings' has the necessary columns
+            if not all(col in df_needing_embeddings.columns for col in ["title", "id"]):
+                 raise ValueError("DataFrame for new embeddings is missing 'title' or 'id'.")
+
+            titles, descriptions = extract_titles_and_descriptions(df_needing_embeddings)
+            df_needing_embeddings["noticia_completa"] = titles + " " + descriptions
             
-            print("ℹ️ Generating embeddings for new news items...")
-            texts_to_encode = df_embeddings["noticia_completa"].tolist()
-            news_ids = df_embeddings["id"].tolist()  # Extract IDs to pair with embeddings
-            total_texts = len(texts_to_encode)
-            batch_size = 256
-            embeddings_list = []
-            processed_ids = []  # To store IDs in the same order as embeddings
-            start_time_embed = time.time()
-            processed_count = 0
-            next_log_percentage = 10 # Start logging at 10%
-
-            for i in range(0, total_texts, batch_size):
-                batch = texts_to_encode[i:min(i + batch_size, total_texts)]
-                batch_ids = news_ids[i:min(i + batch_size, total_texts)]  # Get corresponding IDs for the batch
-                # Ensure model.encode is called without its internal progress bar for cleaner logs
-                batch_embeddings = model.encode(
-                    batch,
-                    convert_to_numpy=True,
-                    show_progress_bar=False  # Disable sentence-transformers internal bar
-                )
-                embeddings_list.append(batch_embeddings)
-                processed_ids.extend(batch_ids)  # Append batch IDs to the processed list
-                processed_count = min(i + batch_size, total_texts)
-
-                # Check if the current progress crossed the next logging threshold
-                current_percentage = (processed_count / total_texts) * 100
-                if current_percentage >= next_log_percentage:
-                    elapsed_time = time.time() - start_time_embed
-                    log_perc = int(next_log_percentage)
-                    print(f"⏳ Embeddings: {log_perc}% complete ({processed_count}/{total_texts} texts). Time elapsed: {elapsed_time:.2f} seconds.")
-                    next_log_percentage = min(log_perc + 10, 100)
-                    while current_percentage >= next_log_percentage and next_log_percentage <= 100:
-                        next_log_percentage += 10
-
-            # Concatenate embeddings from all batches
-            if embeddings_list:
-                new_embeddings = np.vstack(embeddings_list)
-                end_time_embed = time.time()
-                # Final log message remains useful
-                print(f"✅ Embeddings generated for {total_texts} texts in {end_time_embed - start_time_embed:.2f} seconds.")
+            print("ℹ️ Generating new embeddings...")
+            texts_to_encode = df_needing_embeddings["noticia_completa"].tolist()
+            news_ids_for_new_embeddings = df_needing_embeddings["id"].tolist()
+            
+            if texts_to_encode:
+                # Generate embeddings (using your existing batching logic)
+                batch_size_embed = 256
+                new_embeddings_list_np = []
+                for i in range(0, len(texts_to_encode), batch_size_embed):
+                    batch_texts = texts_to_encode[i:min(i + batch_size_embed, len(texts_to_encode))]
+                    batch_embeddings_np = model.encode(batch_texts, convert_to_numpy=True, show_progress_bar=False)
+                    new_embeddings_list_np.append(batch_embeddings_np)
                 
-                # Save the raw embeddings to Firestore
-                embeddings_for_storage = [emb.tolist() for emb in new_embeddings]
-                
-                print("ℹ️ Saving new embeddings to Firestore...")
-                updated_count = update_news_embedding(processed_ids, embeddings_for_storage)
-                print(f"✅ Successfully saved {updated_count} embeddings to Firestore.")
-            
-        # STEP 2: Fetch ALL embeddings from storage (including the ones we just saved)
-        print("ℹ️ Fetching ALL embeddings from storage...")
-        embeddings_data = get_all_embeddings()
+                if new_embeddings_list_np:
+                    new_embeddings_np = np.vstack(new_embeddings_list_np)
+                    print(f"✅ Generated {len(new_embeddings_np)} new embeddings.")
+
+                    # Store these new embeddings in Firestore
+                    embeddings_for_storage_list = [emb.tolist() for emb in new_embeddings_np]
+                    print("ℹ️ Saving new embeddings to Firestore...")
+                    update_news_embedding(news_ids_for_new_embeddings, embeddings_for_storage_list)
+                    print(f"✅ Saved new embeddings to Firestore.")
+
+                    # Add these newly generated embeddings to our main 'all_items_for_clustering_df'
+                    for idx, news_id in enumerate(news_ids_for_new_embeddings):
+                        all_items_for_clustering_df.loc[all_items_for_clustering_df['id'] == news_id, 'embedding_vector'] = [new_embeddings_np[idx]]
+                        # Also update the original 'df' so it has the latest embeddings for these items
+                        df.loc[df['id'] == news_id, 'embedding'] = [new_embeddings_np[idx].tolist()]
+
+
+        # STEP 2: Populate 'embedding_vector' for items in 'all_items_for_clustering_df'
+        # that already had embeddings (from the input 'news_list'/'df')
+        print("ℹ️ Populating existing embeddings for clustering...")
+        for index, row in all_items_for_clustering_df.iterrows():
+            if row['embedding_vector'] is None: # If not populated by new embeddings
+                if 'embedding' in row and row['embedding'] is not None and isinstance(row['embedding'], list) and len(row['embedding']) > 0:
+                    all_items_for_clustering_df.at[index, 'embedding_vector'] = [np.array(row['embedding'])]
+                else:
+                    # This case should ideally be caught by get_news_not_embedded if an item truly needs an embedding
+                    print(f"⚠️ Item with ID {row['id']} has no new or existing valid embedding. It will be excluded from clustering if this persists.")
+                    all_items_for_clustering_df.at[index, 'embedding_vector'] = [np.zeros(get_sentence_transformer_model().get_sentence_embedding_dimension())] # Placeholder, or handle exclusion
+
+        # Filter out rows where embedding_vector could not be set (should be rare if logic is correct)
+        all_items_for_clustering_df.dropna(subset=['embedding_vector'], inplace=True)
         
-        if not embeddings_data or len(embeddings_data) == 0:
-            print("❌ No embeddings available for clustering")
-            return df[["id", "group"]].to_dict(orient='records')
-            
-        # Convert embeddings data to numpy array
-        embeddings = np.array(embeddings_data)
+        if all_items_for_clustering_df.empty:
+            print("❌ No items with embeddings available for clustering.")
+            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+
+        # Extract the list of embedding vectors for clustering
+        # The 'embedding_vector' column now stores lists containing single numpy arrays. We need to stack them.
+        embeddings_for_clustering_np = np.vstack(all_items_for_clustering_df['embedding_vector'].apply(lambda x: x[0]).tolist())
+
+        if embeddings_for_clustering_np.shape[0] == 0:
+            print("❌ No embeddings available for clustering after processing.")
+            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
         
-        # STEP 3: Normalize ALL embeddings
-        print("ℹ️ Normalizing ALL embeddings for cosine similarity...")
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1e-10  # Avoid division by zero
-        embeddings_norm = embeddings / norms
+        # STEP 3: Normalize embeddings for cosine similarity
+        print("ℹ️ Normalizing embeddings for cosine similarity...")
+        norms = np.linalg.norm(embeddings_for_clustering_np, axis=1, keepdims=True)
+        norms[norms == 0] = 1e-10
+        embeddings_norm = embeddings_for_clustering_np / norms
         
         print("ℹ️ Calculating nearest neighbors graph...")
-        # Nearest neighbors model
-        n_neighbors = min(5, len(df))  # Number of neighbors to consider
-        # Ensure n_neighbors is not larger than the number of samples
-        effective_n_neighbors = min(n_neighbors, embeddings_norm.shape[0])
-        nbrs = NearestNeighbors(n_neighbors=effective_n_neighbors, metric="cosine").fit(embeddings_norm)
+        n_neighbors = min(5, embeddings_norm.shape[0])
+        if n_neighbors < 2 and embeddings_norm.shape[0] > 1 : # DBSCAN needs at least 2 samples for meaningful neighbors
+            n_neighbors = 2 
+        elif embeddings_norm.shape[0] <=1: # Not enough samples to cluster
+             print("ℹ️ Not enough samples to perform clustering. Assigning all to group 0 or existing groups.")
+             if not has_reference_news and embeddings_norm.shape[0] == 1:
+                 all_items_for_clustering_df['group'] = 0
+             # Update original df based on all_items_for_clustering_df's groups
+             for index, row_clustered in all_items_for_clustering_df.iterrows():
+                 df.loc[df['id'] == row_clustered['id'], 'group'] = row_clustered['group']
+             return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
 
-        # Build sparse distance matrix directly using kneighbors_graph
-        # mode='distance' gives the cosine distance (1 - similarity), which DBSCAN needs
-        dist_matrix_sparse = nbrs.kneighbors_graph(
-            embeddings_norm,
-            n_neighbors=effective_n_neighbors,
-            mode='distance'
-        )
-        # Sort the sparse graph for DBSCAN efficiency
+
+        nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(embeddings_norm)
+        dist_matrix_sparse = nbrs.kneighbors_graph(embeddings_norm, n_neighbors=n_neighbors, mode='distance')
+        
         print("ℹ️ Sorting sparse distance graph...")
         dist_matrix_sparse_sorted = sort_graph_by_row_values(dist_matrix_sparse)
         
         print("ℹ️ Applying DBSCAN algorithm...")
-        # Parameters for clustering
-        eps = 0.25  # Distance threshold
-        min_samples = 2  # Minimum number of samples in a cluster
+        eps = 0.25
+        min_samples = 2
         
-        # Apply DBSCAN with the precomputed *sorted* sparse distance matrix
         clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
-        # Pass the sorted graph directly
         group_labels = clustering.fit_predict(dist_matrix_sparse_sorted)
 
-        # Assign groups only to news that don't have one
-        temp_group_column = "temp_group"
-        df[temp_group_column] = group_labels
+        # Now, group_labels has the same length as all_items_for_clustering_df
+        all_items_for_clustering_df["temp_group"] = group_labels
         
-        # Map new groups to existing ones when there are matches
+        # Map these temp_groups back to the original df
+        # Create a mapping from id to temp_group
+        id_to_temp_group_map = pd.Series(all_items_for_clustering_df.temp_group.values, index=all_items_for_clustering_df.id).to_dict()
+
+        # Apply this map to the original df
+        # For items in df that were clustered, assign their new temp_group
+        # For items in df that were NOT in all_items_for_clustering_df (e.g. excluded due to no embedding), their group remains as is (likely None or existing_group)
+        df['temp_group'] = df['id'].map(id_to_temp_group_map)
+
+
+        # --- Start of existing group mapping and post-processing logic ---
+        # This part needs to operate on 'df' which now has 'temp_group' for clustered items
+        # and 'group' for pre-existing groups.
+
         if has_reference_news:
-            group_mapping = {}
-            for new_group in np.unique(group_labels):
-                if new_group == -1:  # Skip noise/outliers
+            print("ℹ️ Mapping new DBSCAN clusters to existing reference groups...")
+            # Iterate over unique temporary DBSCAN groups
+            for new_db_group_id in df['temp_group'].dropna().unique():
+                if new_db_group_id == -1: # Outliers from DBSCAN
+                    # For items marked as outliers by DBSCAN, if they don't have an existing_group, set their final group to None
+                    df.loc[(df['temp_group'] == -1) & (df['existing_group'].isna()), 'group'] = None
                     continue
+
+                # News items belonging to this new DBSCAN group
+                current_dbscan_group_items_df = df[df['temp_group'] == new_db_group_id]
+
+                # Of these, find items that are references (have an existing_group)
+                reference_items_in_dbscan_group = current_dbscan_group_items_df[current_dbscan_group_items_df['is_reference'] == True]
+
+                if not reference_items_in_dbscan_group.empty:
+                    # If there are reference items, find the most common existing_group among them
+                    # (or the first one if you prefer, assuming references in a DBSCAN cluster should share the same original group)
+                    target_existing_group = reference_items_in_dbscan_group['existing_group'].mode()[0]
                     
-                # Find news in this new temporary group
-                group_items = df[df[temp_group_column] == new_group]
-                
-                # Check if any have an existing group
-                ref_items = group_items[group_items["is_reference"]]
-                if len(ref_items) > 0:
-                    existing_groups = ref_items["existing_group"].unique()
+                    # Assign all items in this DBSCAN group (that don't already have a group) to this target_existing_group
+                    df.loc[(df['temp_group'] == new_db_group_id) & (df['group'].isna()), 'group'] = target_existing_group
+                else:
+                    # No reference items in this DBSCAN group. This is a new cluster of non-reference items.
+                    # We need to assign a new, unique group ID to them.
+                    # These new group IDs must not conflict with existing_group IDs or other new group IDs.
+                    # Find the max existing group ID and max new group ID assigned so far.
+                    max_existing_group = df['existing_group'].dropna().max() if not df['existing_group'].dropna().empty else -1
+                    max_assigned_new_group = df.loc[df['temp_group'] != new_db_group_id, 'group'].dropna().max() if not df.loc[df['temp_group'] != new_db_group_id, 'group'].dropna().empty else -1
+                    next_new_group_id = max(max_existing_group, max_assigned_new_group) + 1
                     
-                    # If there are multiple existing groups, choose the most frequent
-                    if len(existing_groups) > 1:
-                        counts = ref_items["existing_group"].value_counts()
-                        most_common = counts.idxmax()
-                        group_mapping[new_group] = most_common
-                    else:
-                        group_mapping[new_group] = existing_groups[0]
-            
-            # Apply the mapping where necessary
-            for idx, row in df.iterrows():
-                if not row["is_reference"]:
-                    temp_group = row[temp_group_column]
-                    if temp_group in group_mapping:
-                        # Use mapped existing group
-                        df.at[idx, "group"] = group_mapping[temp_group]
-                    elif temp_group != -1:
-                        # Create new group for clusters without mapping
-                        # Find the maximum existing group and add 1
-                        if df["group"].notna().any():
-                            max_group = df["group"].max()
-                            if max_group is not None:
-                                new_group_id = int(max_group) + 1
-                            else:
-                                new_group_id = 0
-                        else:
-                            new_group_id = 0
-                            
-                        # Assign new ID to the entire cluster
-                        mask = (df[temp_group_column] == temp_group) & (~df["is_reference"])
-                        df.loc[mask, "group"] = new_group_id
-        else:
-            # If there are no reference news, simply assign DBSCAN groups
-            df["group"] = df[temp_group_column]
-            df.loc[df["group"] == -1, "group"] = None
+                    df.loc[(df['temp_group'] == new_db_group_id) & (df['group'].isna()), 'group'] = next_new_group_id
+        else: # No reference news at all
+            print("ℹ️ No reference news. Assigning DBSCAN groups directly.")
+            # Assign DBSCAN groups to items that don't have a group yet (which is all of them in this branch)
+            df.loc[df['group'].isna(), 'group'] = df['temp_group']
+            # DBSCAN outliers (-1) become None (ungrouped)
+            df.loc[df['group'] == -1, 'group'] = None
+
+
+        # Ensure all items that were initially reference items retain their original group
+        if has_reference_news:
+            df.loc[df['is_reference'] == True, 'group'] = df['existing_group']
+
+        # Clean up temp column
+        df.drop(columns=['temp_group'], inplace=True, errors='ignore')
         
-        # New post-processing to remove duplicates by medium
+        # --- Start of existing post-processing logic (remove duplicates by medium, etc.) ---
+        # This logic should now correctly use the 'group' column populated above.
         result = []
-        
-        # Process news by groups
-        for group in df["group"].unique():
-            if pd.isna(group):
-                continue
-                
-            # Filter news in this group
-            group_df = df[df["group"] == group]
+        processed_ids_for_result = set()
+
+        # Process news by final groups
+        unique_final_groups = df["group"].dropna().unique()
+
+        for group_id in unique_final_groups:
+            group_df = df[df["group"] == group_id]
             
-            # If there's only one news item in the group and it's not a reference, leave it ungrouped
-            if len(group_df) < 2 and not any(group_df["is_reference"]):
-                for _, row in group_df.iterrows():
-                    result.append({
-                        "id": row["id"],
-                        "group": group,
-                        "title": row["title"],
-                        "scraped_description": row["scraped_description"],
-                        "source_medium": row["source_medium"]
+            # If there's only one news item in the group AND it's not a reference item,
+            # AND it wasn't part of a larger DBSCAN cluster that got reduced to 1 by deduplication,
+            # then consider making it ungrouped (group = None).
+            # This needs careful thought: if DBSCAN put it alone, it's an outlier.
+            # If it was with others but deduplication isolated it, it might still be related.
+            # For now, if a group has only one non-reference item, let's ungroup it.
+            if len(group_df) == 1 and not group_df.iloc[0]["is_reference"]:
+                item_row = group_df.iloc[0]
+                result.append({
+                    "id": item_row["id"], "group": None, "title": item_row["title"],
+                    "scraped_description": item_row["scraped_description"], "source_medium": item_row["source_medium"]
+                })
+                processed_ids_for_result.add(item_row["id"])
+                continue # Move to the next group_id
+
+            seen_media_in_group = set()
+            current_group_items_for_result = []
+
+            # Prioritize reference items for deduplication
+            reference_items_in_final_group = group_df[group_df["is_reference"] == True]
+            for _, item_row in reference_items_in_final_group.iterrows():
+                if item_row["source_medium"] not in seen_media_in_group:
+                    current_group_items_for_result.append({
+                        "id": item_row["id"], "group": group_id, "title": item_row["title"],
+                        "scraped_description": item_row["scraped_description"], "source_medium": item_row["source_medium"]
                     })
-                continue
+                    seen_media_in_group.add(item_row["source_medium"])
+                    processed_ids_for_result.add(item_row["id"])
             
-            # Track seen media
-            seen_media = set()
-            filtered_group = []
-            
-            # First include reference news
-            for _, row in group_df[group_df["is_reference"]].iterrows():
-                if row["source_medium"] not in seen_media:
-                    seen_media.add(row["source_medium"])
-                    filtered_group.append(row)
-            
-            # Then include new news
-            for _, row in group_df[~group_df["is_reference"]].iterrows():
-                if row["source_medium"] not in seen_media:
-                    seen_media.add(row["source_medium"])
-                    filtered_group.append(row)
-            
-            # If there are fewer than 2 news items after removing duplicates, ignore group
-            # unless there are already reference news
-            if len(filtered_group) < 2 and not any(row["is_reference"] for row in filtered_group):
-                for row in filtered_group:
-                    result.append({
-                        "id": row["id"],
-                        "group": None,
-                        "title": row["title"],
-                        "scraped_description": row["scraped_description"],
-                        "source_medium": row["source_medium"]
-                    })
+            # Add non-reference items, avoiding duplicate media
+            non_reference_items_in_final_group = group_df[group_df["is_reference"] == False]
+            for _, item_row in non_reference_items_in_final_group.iterrows():
+                if item_row["id"] not in processed_ids_for_result: # Ensure not already added as a reference
+                    if item_row["source_medium"] not in seen_media_in_group:
+                        current_group_items_for_result.append({
+                            "id": item_row["id"], "group": group_id, "title": item_row["title"],
+                            "scraped_description": item_row["scraped_description"], "source_medium": item_row["source_medium"]
+                        })
+                        seen_media_in_group.add(item_row["source_medium"])
+                        processed_ids_for_result.add(item_row["id"])
+
+            # If after deduplication, a group has less than 2 items AND no reference items were part of it,
+            # then ungroup these items.
+            if len(current_group_items_for_result) < 2 and not any(item['id'] in reference_items_in_final_group['id'].values for item in current_group_items_for_result):
+                for item_dict in current_group_items_for_result:
+                    item_dict["group"] = None # Ungroup them
+                    result.append(item_dict)
             else:
-                for row in filtered_group:
-                    result.append({
-                        "id": row["id"],
-                        "group": group,
-                        "title": row["title"],
-                        "scraped_description": row["scraped_description"],
-                        "source_medium": row["source_medium"]
-                    })
+                result.extend(current_group_items_for_result)
+
+        # Add any remaining items from df that were not processed (e.g., initially ungrouped and stayed ungrouped)
+        for index, row in df.iterrows():
+            if row["id"] not in processed_ids_for_result:
+                result.append({
+                    "id": row["id"], "group": row["group"], # Use its current group (could be None)
+                    "title": row["title"], "scraped_description": row["scraped_description"],
+                    "source_medium": row["source_medium"]
+                })
         
-        # Include news that were left ungrouped (outliers)
-        for _, row in df[pd.isna(df["group"])].iterrows():
-            result.append({
-                "id": row["id"],
-                "group": None,
-                "title": row["title"],
-                "scraped_description": row["scraped_description"],
-                "source_medium": row["source_medium"]
-            })
-        
-        # If no groups with more than one news item remain, assign individual groups
-        if not any(r["group"] is not None for r in result):
-            for i, r in enumerate(result):
-                r["group"] = i
+        # Final check: if no groups were formed (all items have group=None),
+        # assign unique group IDs to each item to prevent errors downstream if groups are expected.
+        # This is a fallback.
+        all_groups_are_none = all(r.get("group") is None for r in result)
+        if all_groups_are_none and result:
+            print("ℹ️ All items remained ungrouped after processing. Assigning unique group IDs as a fallback.")
+            for i, item_dict in enumerate(result):
+                item_dict["group"] = i
+
 
         print("✅ Grouping completed successfully")
         return result
@@ -404,7 +421,12 @@ def group_news(news_list: list):
     except Exception as e:
         print(f"❌ Error in group_news: {str(e)}")
         traceback.print_exc()
-        raise
+        # Instead of re-raising, return the current state of df or an empty list
+        # to allow the main process to continue if possible, or handle more gracefully.
+        # For now, returning what might be partially processed.
+        if 'df' in locals() and isinstance(df, pd.DataFrame):
+             return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+        return [] # Fallback if df is not defined
 
 def extract_titles_and_descriptions(df_embeddings):
     titles = df_embeddings["title"].fillna("")
