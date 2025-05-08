@@ -218,8 +218,9 @@ def group_news(news_list: list):
                         
                         # Update 'df.embedding'
                         # Each cell should store the flat list of floats: [float, float, ...]
-                        #df.loc[df['id'] == news_id, 'embedding'] = current_embedding_list
-                        df.loc[df['id'] == news_id, 'embedding'] = [current_embedding_list]
+                        for idx in df.index[df['id'] == news_id]:
+                            df.at[idx, 'embedding'] = current_embedding_list
+                        #df.loc[df['id'] == news_id, 'embedding'] = [current_embedding_list]
                         # df.at[df.index[df['id'] == news_id][0], 'embedding'] = current_embedding_list
 
 
