@@ -4,18 +4,25 @@ import os
 import argparse
 import sys
 import importlib
+import csv
+from datetime import datetime
+import time
+
 """SAMPLE: 
 python select_news.py --collection news `
   --fields description,scraped_description,title `
   --match-type any `
   --filter-type contains `
-  --value messi `
+  --value lautaro `
   --limit 1000 `
   --output json `
+  --export csv `
+  --export-path "./results" `
   --no-interactive
 """
+
 # Check for required packages
-required_packages = ["firebase_admin", "tabulate"]
+required_packages = ["firebase_admin", "tabulate", "pandas", "openpyxl"]
 for package in required_packages:
     try:
         importlib.import_module(package)
@@ -28,9 +35,10 @@ for package in required_packages:
         except ImportError:
             print(f"Failed to install {package}. Please install it manually: pip install {package}")
             sys.exit(1)
+
 import json
-from datetime import datetime
 from tabulate import tabulate
+import pandas as pd
 
 # Ruta al archivo JSON de tu cuenta de servicio - Relative path from script location
 SERVICE_ACCOUNT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../neutralnews-ca548-firebase-adminsdk-fbsvc-b2a2b9fa03.json'))
@@ -44,6 +52,8 @@ DEFAULT_CONFIG = {
     "filter_type": "contains",     # Options: "starts_with", "contains", "equals", "none"
     "value": "",                   # Search value
     "output": "table",             # Options: "table", "json", "raw"
+    "export": None,                # Export format: "csv", "excel", "json", "html", None
+    "export_path": "./results",    # Directory to save exported files
     "interactive": True,           # Whether to prompt for input
 }
 
@@ -242,6 +252,67 @@ def display_results(results, config):
             print(tabulate(rows, headers=headers, tablefmt="grid"))
             print(f"Total: {len(docs)} documents")
 
+def export_results(results, config):
+    """Export search results to file in the specified format"""
+    if not results:
+        print("No results to export.")
+        return False
+    
+    # Ensure export directory exists
+    os.makedirs(config["export_path"], exist_ok=True)
+    
+    # Generate a filename based on search parameters
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    search_term = config["value"].replace(" ", "_")[:20] if config["value"] else "all"
+    collection = config["collection"]
+    base_filename = f"{collection}_{search_term}_{timestamp}"
+    
+    # Convert results to a common format for export
+    # Convert any non-serializable objects (like datetimes)
+    serializable_results = []
+    for doc in results:
+        serializable_doc = {}
+        for key, value in doc.items():
+            if isinstance(value, datetime):
+                serializable_doc[key] = format_datetime(value)
+            elif isinstance(value, (int, float, str, bool, list, dict)) or value is None:
+                serializable_doc[key] = value
+            else:
+                serializable_doc[key] = str(value)
+        serializable_results.append(serializable_doc)
+    
+    # Create a DataFrame for easy export
+    df = pd.DataFrame(serializable_results)
+    
+    filepath = ""
+    
+    if config["export"] == "csv":
+        # Export to CSV
+        filepath = os.path.join(config["export_path"], f"{base_filename}.csv")
+        df.to_csv(filepath, index=False, encoding='utf-8-sig')  # utf-8-sig for Excel compatibility
+        
+    elif config["export"] == "excel":
+        # Export to Excel
+        filepath = os.path.join(config["export_path"], f"{base_filename}.xlsx")
+        df.to_excel(filepath, index=False, engine='openpyxl')
+        
+    elif config["export"] == "json":
+        # Export to JSON
+        filepath = os.path.join(config["export_path"], f"{base_filename}.json")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(serializable_results, f, ensure_ascii=False, indent=2)
+            
+    elif config["export"] == "html":
+        # Export to HTML
+        filepath = os.path.join(config["export_path"], f"{base_filename}.html")
+        df.to_html(filepath, index=False)
+    
+    if filepath:
+        print(f"✅ Results exported to: {os.path.abspath(filepath)}")
+        return True
+    else:
+        return False
+
 def interactive_config():
     """Get search configuration interactively"""
     config = DEFAULT_CONFIG.copy()
@@ -374,6 +445,32 @@ def interactive_config():
     elif format_choice == "3":
         config["output"] = "raw"
     
+    # Export options
+    print("\nExport results to file?")
+    print("1. No export (display only)")
+    print("2. CSV file (Excel compatible)")
+    print("3. Excel file (.xlsx)")
+    print("4. JSON file")
+    print("5. HTML file")
+    
+    export_choice = input("Enter choice (1-5) [default: 1]: ").strip() or "1"
+    
+    if export_choice == "1":
+        config["export"] = None
+    elif export_choice == "2":
+        config["export"] = "csv"
+    elif export_choice == "3":
+        config["export"] = "excel"
+    elif export_choice == "4":
+        config["export"] = "json"
+    elif export_choice == "5":
+        config["export"] = "html"
+    
+    if config["export"]:
+        default_path = "./results"
+        export_path = input(f"Export directory [default: {default_path}]: ").strip() or default_path
+        config["export_path"] = export_path
+    
     return config
 
 def parse_args():
@@ -401,6 +498,12 @@ def parse_args():
     parser.add_argument("--output", choices=["table", "json", "raw"],
                         default=DEFAULT_CONFIG["output"], help="Output format")
     
+    parser.add_argument("--export", choices=["csv", "excel", "json", "html"],
+                        help="Export results to file format")
+    
+    parser.add_argument("--export-path", default=DEFAULT_CONFIG["export_path"],
+                        help="Directory path for exported files")
+    
     parser.add_argument("--no-interactive", action="store_true",
                         help="Run in non-interactive mode")
     
@@ -414,6 +517,8 @@ def parse_args():
         "value": args.value,
         "limit": args.limit,
         "output": args.output,
+        "export": args.export,
+        "export_path": args.export_path,
         "interactive": not args.no_interactive
     }
     
@@ -450,6 +555,8 @@ def main():
     print(f"Value: {config['value']}")
     print(f"Limit: {config['limit']}")
     print(f"Output: {config['output']}")
+    if config["export"]:
+        print(f"Export: {config['export']} ({config['export_path']})")
     print("="*25)
     
     # Perform search
@@ -457,6 +564,10 @@ def main():
     
     # Display results
     display_results(results, config)
+    
+    # Export results if specified
+    if config["export"]:
+        export_results(results, config)
     
     # Summary
     print(f"\nFound {len(results)} documents.")
