@@ -84,7 +84,6 @@ if ($pycFiles.Count -gt 0) {
     $confirmPyc = Read-Host "Do you want to delete these .pyc files as well? (y/n)"
     if ($confirmPyc -eq 'y') {
         foreach ($file in $pycFiles) {
-            Write-Host "Removing: $($file.FullName)" -ForegroundColor Gray
             Remove-Item -Path $file.FullName -Force
         }
         Write-Host "Deleted $($pycFiles.Count) .pyc files ($pycSizeMB MB freed)." -ForegroundColor Cyan
