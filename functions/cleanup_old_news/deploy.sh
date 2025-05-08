@@ -15,7 +15,7 @@ gcloud run deploy cleanup-old-news-service \
   --region us-central1 \
   --memory 4096M \
   --cpu 1 \
-  --timeout 540 \
+  --timeout 360 \
   --allow-unauthenticated
 if [ $? -ne 0 ]; then
     echo "Error: Cloud Run deployment failed." >&2

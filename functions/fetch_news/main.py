@@ -8,7 +8,7 @@ options.set_global_options(region=options.SupportedRegion.US_CENTRAL1)
 @scheduler_fn.on_schedule(
     schedule="0 * * * *",  # Ejecutar a cada hora en punto (minuto 0)
     memory=4096,
-    timeout_sec=660
+    timeout_sec=360
 )
 def fetch_news(event: scheduler_fn.ScheduledEvent) -> None:
     print("Ejecutando fetch_news function...")
