@@ -4,7 +4,16 @@ import os
 import argparse
 import sys
 import importlib
-
+"""SAMPLE: 
+python select_news.py --collection news `
+  --fields description,scraped_description,title `
+  --match-type any `
+  --filter-type contains `
+  --value messi `
+  --limit 1000 `
+  --output json `
+  --no-interactive
+"""
 # Check for required packages
 required_packages = ["firebase_admin", "tabulate"]
 for package in required_packages:
