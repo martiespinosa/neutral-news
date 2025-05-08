@@ -118,7 +118,7 @@ def neutralize_and_more(news_groups, batch_size=5):
                     update_news_with_neutral_scores(sources, result)
                     
                     neutralized_count += 1
-                    print(f"Created neutral news for group {group_number}")
+                    print(f"Created neutral news for group {group}")
         
         print(f"Created {neutralized_count} and updated {updated_count} neutral news groups")
         return neutralized_count + updated_count
