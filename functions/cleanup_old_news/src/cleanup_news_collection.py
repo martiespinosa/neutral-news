@@ -1,5 +1,6 @@
 import time
 import traceback
+from src.delete import delete_documents_batch
 
 def cleanup_news_collection(db, time_threshold, protected_ids, batch_size=450):
     """
@@ -26,28 +27,22 @@ def cleanup_news_collection(db, time_threshold, protected_ids, batch_size=450):
             print(f"  ℹ️ No old documents found in news collection")
             return 0, 0
             
-        # Process documents
-        batch = db.batch()
-        deleted_count = 0
+        # Separate documents into protected and to-delete
+        docs_to_delete = []
         protected_count = 0
         
-        for i, doc in enumerate(old_docs):
-            doc_id = doc.id
-            
-            if doc_id in protected_ids:
+        for doc in old_docs:
+            if doc.id in protected_ids:
                 protected_count += 1
-                continue
-                
-            batch.delete(doc.reference)
-            deleted_count += 1
-            
-            if deleted_count % batch_size == 0:
-                print(f"  - Committing batch {deleted_count // batch_size} ({batch_size} items) from news...")
-                batch.commit()
-                batch = db.batch()
+            else:
+                docs_to_delete.append(doc)
         
-        if deleted_count % batch_size != 0:
-            batch.commit()
+        # Process documents to delete in smaller batches
+        deleted_count = 0
+        if docs_to_delete:
+            # Use a more conservative batch size to avoid "Transaction too big" errors
+            adjusted_batch_size = min(batch_size, 200)  # Reduced from 450 to 200
+            deleted_count = delete_documents_batch(db, docs_to_delete, adjusted_batch_size, 'news')
             
         elapsed = time.time() - start_time
         print(f"  ✓ Completed news cleanup: {deleted_count} deleted, {protected_count} protected in {elapsed:.2f} seconds")
