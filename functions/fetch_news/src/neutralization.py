@@ -12,9 +12,7 @@ def neutralize_and_more(news_groups, batch_size=5):
     if not news_groups:
         print("No news groups to neutralize")
         return 0
-        
-    neutralized_count = 0
-    updated_count = 0
+    
     db = initialize_firebase()
     
     try:
@@ -22,6 +20,12 @@ def neutralize_and_more(news_groups, batch_size=5):
         groups_to_neutralize = []
         groups_to_update = []
         
+        unchanged_group_count = 0
+        changed_group_count = 0
+        unchanged_group_ids = []
+        changed_group_ids = []
+        
+        print(f"ℹ️ Processing {len(news_groups)} news groups for neutralization")
         for group in news_groups:   
             group_number = group.get('group')
             if group_number is not None:
@@ -52,11 +56,13 @@ def neutralize_and_more(news_groups, batch_size=5):
                     
                     # Si los IDs son iguales, no es necesario volver a neutralizar
                     if current_source_ids == existing_source_ids:
-                        print(f"Group {group_number} unchanged, skipping neutralization")
+                        unchanged_group_count += 1
+                        unchanged_group_ids.append(group_number)
                         continue
                     else:
                         # Los IDs son diferentes, necesitamos actualizar este documento existente
-                        print(f"Group {group_number} changed, will update existing neutral news")
+                        changed_group_count += 1
+                        changed_group_ids.append(group_number)
                         groups_to_update.append({
                             'group': group_number,
                             'sources': sources,
@@ -72,55 +78,69 @@ def neutralize_and_more(news_groups, batch_size=5):
                 'source_ids': current_source_ids
             })
         
-        # Primero procesamos los grupos que necesitan actualización
+        
+        neutralized_count = 0
+        updated_count = 0
+        db = initialize_firebase()
+        total_discarded_groups_count = 0 # New counter for discarded groups
+        print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
+        print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
+        
+        print(f"ℹ️ Updating neutralization of {len(groups_to_update)} groups")
         for i in range(0, len(groups_to_update), batch_size):
-            batch = groups_to_update[i:i+batch_size]
+            current_batch_to_update = groups_to_update[i:i+batch_size]
             
-            if batch:
-                results = generate_neutral_analysis_batch([g for g in batch])
-                
-                for result, group_info in zip(results, batch):
-                    if not result:
-                        continue
+            if current_batch_to_update:
+                valid_batch_for_update, discarded_in_update_batch = validate_batch_for_processing(current_batch_to_update)
+                total_discarded_groups_count += discarded_in_update_batch
+
+                if valid_batch_for_update:
+                    results = generate_neutral_analysis_batch(valid_batch_for_update)
+                    
+                    for result, group_info in zip(results, valid_batch_for_update):
+                        if not result:
+                            continue
+                            
+                        group = group_info['group']
+                        sources = group_info['sources']
+                        source_ids = group_info['source_ids']
                         
-                    group = group_info['group']
-                    sources = group_info['sources']
-                    source_ids = group_info['source_ids']
-                    
-                    # Actualizar el documento existente en neutral_news
-                    update_existing_neutral_news(group, result, source_ids)
-                    
-                    # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    updated_count += 1
-                    print(f"Updated neutral news for group {group}")
+                        # Actualizar el documento existente en neutral_news
+                        update_existing_neutral_news(group, result, source_ids)
+                        
+                        # Actualizar las noticias originales con su puntuación de neutralidad
+                        update_news_with_neutral_scores(sources, result)
+                        
+                        updated_count += 1
         
-        # Luego procesamos los grupos nuevos
+        print(f"ℹ️ Creating neutralization for {len(groups_to_neutralize)} groups")
         for i in range(0, len(groups_to_neutralize), batch_size):
-            batch = groups_to_neutralize[i:i+batch_size]
+            current_batch_to_neutralize = groups_to_neutralize[i:i+batch_size]
             
-            if batch:
-                results = generate_neutral_analysis_batch(batch)
-                
-                for result, group_info in zip(results, batch):
-                    if not result:
-                        continue
+            if current_batch_to_neutralize:
+                valid_batch_for_neutralization, discarded_in_neutralize_batch = validate_batch_for_processing(current_batch_to_neutralize)
+                total_discarded_groups_count += discarded_in_neutralize_batch
+
+                if valid_batch_for_neutralization:
+                    results = generate_neutral_analysis_batch(valid_batch_for_neutralization)
+                    
+                    for result, group_info in zip(results, valid_batch_for_neutralization): # Iterate over the validated batch
+                        if not result:
+                            continue
+                            
+                        group = group_info['group']
+                        sources = group_info['sources']
+                        source_ids = group_info['source_ids']
                         
-                    group = group_info['group']
-                    sources = group_info['sources']
-                    source_ids = group_info['source_ids']
-                    
-                    # Guardar el resultado en la colección neutral_news con los IDs de fuente
-                    store_neutral_news(group, result, source_ids)
-                    
-                    # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    neutralized_count += 1
-                    print(f"Created neutral news for group {group}")
+                        # Guardar el resultado en la colección neutral_news con los IDs de fuente
+                        store_neutral_news(group, result, source_ids)
+                        
+                        # Actualizar las noticias originales con su puntuación de neutralidad
+                        update_news_with_neutral_scores(sources, result)
+                        
+                        neutralized_count += 1
         
-        print(f"Created {neutralized_count} and updated {updated_count} neutral news groups")
+        print(f"Created {neutralized_count}, updated {updated_count}, and discarded {total_discarded_groups_count} neutral news groups")
         return neutralized_count + updated_count
         
     except Exception as e:
@@ -346,3 +366,33 @@ def generate_neutral_analysis(sources):
         import traceback
         traceback.print_exc()
         return None
+
+
+def validate_batch_for_processing(batch_to_validate):
+    """
+    Validates a batch of groups to ensure they have enough valid sources.
+    A valid source must have a non-empty title and scraped_description.
+    A group is valid if it has at least 2 valid sources.
+    Returns a list of valid groups and the count of discarded groups.
+    """
+    valid_groups_in_batch = []
+    discarded_count = 0
+    if not batch_to_validate:
+        return [], 0
+
+    for group_info_to_validate in batch_to_validate:
+        sources_to_validate = group_info_to_validate.get('sources', [])
+        valid_sources_count = 0
+        for source in sources_to_validate:
+            title = source.get('title', '')
+            description = source.get('scraped_description', '') # Assuming 'scraped_description' is the field for content
+            if title and description: # Checks if both are non-empty
+                valid_sources_count += 1
+        
+        if valid_sources_count >= 2:
+            valid_groups_in_batch.append(group_info_to_validate)
+        else:
+            discarded_count += 1
+            group_id_to_skip = group_info_to_validate.get('group', 'Unknown')
+            print(f"ℹ️ Discarding group {group_id_to_skip} for processing: requires at least 2 sources with non-empty title and description. Found {valid_sources_count}.")
+    return valid_groups_in_batch, discarded_count
