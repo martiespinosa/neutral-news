@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+cleanup_old_news/tests/.gitkeep
+cleanup_old_news/tests/*
