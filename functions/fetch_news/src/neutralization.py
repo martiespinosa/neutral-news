@@ -20,23 +20,40 @@ def neutralize_and_more(news_groups, batch_size=5):
         groups_to_neutralize = []
         groups_to_update = []
         
+        no_group_count = 0
+        no_group_ids = []
+        
+        no_sources_count = 0
+        no_sources_ids = []
+        
         unchanged_group_count = 0
-        changed_group_count = 0
         unchanged_group_ids = []
+        
+        changed_group_count = 0
         changed_group_ids = []
+        
+        to_neutralize_count = 0
+        to_neutralize_ids = []
+        
         
         print(f"ℹ️ Processing {len(news_groups)} news groups for neutralization")
         for group in news_groups:   
             group_number = group.get('group')
             if group_number is not None:
-            # Normalizar a entero
                 group_number = int(float(group_number))
                 group['group'] = group_number
 
             sources = group.get('sources', [])
             
-            if not group or not sources or len(sources) < 2:
+            if not group:
+                no_group_count += 1
+                no_group_ids.append(group_number)
                 continue
+            if not sources or len(sources) < 2:
+                no_sources_count += 1
+                no_sources_ids.append(group_number)
+                continue
+
                 
             # Extraer los IDs de las noticias actuales
             current_source_ids = [source.get('id') for source in sources if source.get('id')]
@@ -77,15 +94,19 @@ def neutralize_and_more(news_groups, batch_size=5):
                 'sources': sources,
                 'source_ids': current_source_ids
             })
-        
-        
+            to_neutralize_count += 1
+            to_neutralize_ids.append(group_number)
+
         neutralized_count = 0
         updated_count = 0
         db = initialize_firebase()
         total_discarded_groups_count = 0 # New counter for discarded groups
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
-        
+        print(f"Groups to neutralize: {len(groups_to_neutralize)}. IDs: {to_neutralize_ids}")
+        print(f"Groups with no sources: {no_sources_count}. IDs: {no_sources_ids}")
+        print(f"Groups with no group number: {no_group_count}. IDs: {no_group_ids}")
+
         print(f"ℹ️ Updating neutralization of {len(groups_to_update)} groups")
         for i in range(0, len(groups_to_update), batch_size):
             current_batch_to_update = groups_to_update[i:i+batch_size]

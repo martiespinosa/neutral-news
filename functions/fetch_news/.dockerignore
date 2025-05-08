@@ -35,3 +35,8 @@ Thumbs.db
 # Add any other large files/folders not needed at runtime
 # e.g., large data files only used for local testing
 local_data/
+
+# Ignore all from fetch_news/tests
+
+fetch_news/tests/*
+fetch_news/tests/.gitkeep

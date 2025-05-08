@@ -24,8 +24,7 @@ def process_news_groups():
         groups_prepared = prepare_groups_for_neutralization(grouped_news)
         neutralized_count = neutralize_and_more(groups_prepared)
 
-        print(f"Groups updated for {updated_count} news, neutralized {neutralized_count} groups")
-        return updated_count
+        print(f"{updated_count} individual news items were updated with neutrality scores, neutralized {neutralized_count} groups")
     except Exception as e:
         print(f"Error in process_news_groups: {str(e)}")
         traceback.print_exc()

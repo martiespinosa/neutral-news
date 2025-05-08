@@ -56,7 +56,7 @@ class RobotsChecker:
         self.parsers = {}
         self.timeout = timeout
         self.logger = Logger("RobotsChecker")
-
+    
     def _get_parser(self, base_url):
         if (base_url in self.parsers) and (self.parsers[base_url] is not None):
             return self.parsers[base_url]
