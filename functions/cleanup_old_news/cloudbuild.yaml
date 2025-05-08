@@ -1,7 +1,7 @@
 steps:
 # Build the container image
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'gcr.io/neutralnews-ca548/cleanup-old-news-image', '.']
+  #args: ['build', '-t', 'gcr.io/neutralnews-ca548/cleanup-old-news-image', '.']
   # Add cacheFrom to potentially speed up builds by reusing layers from previous builds
   # Note: This requires the previous image to exist in the registry.
   args: ['build', '--cache-from', 'gcr.io/neutralnews-ca548/cleanup-old-news-image', '-t', 'gcr.io/neutralnews-ca548/cleanup-old-news-image', '.']

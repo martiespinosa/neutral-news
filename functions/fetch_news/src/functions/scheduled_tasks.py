@@ -13,7 +13,7 @@ def fetch_news_task():
         print(f"Total news obtained: {len(all_news)}")
 
         if all_news:
-            stored_count = store_news_in_firestore(all_news)
+            stored_count = store_news_in_fires tore(all_news)
             print(f"{stored_count} new news were saved")
         else:
             print("No news found to save")
