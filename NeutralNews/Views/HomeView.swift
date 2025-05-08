@@ -56,6 +56,7 @@ struct HomeView: View {
             .navigationTitle(vm.daySelected.dayName)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { dayMenu }
+                ToolbarItem(placement: .topBarTrailing) { orderMenu }
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
         }
@@ -64,45 +65,41 @@ struct HomeView: View {
     var dayMenu: some View {
         Menu {
             ForEach(vm.lastSevenDays) { day in
-                Button(day.dayName) {
+                Button {
                     vm.changeDay(to: day)
+                } label: {
+                    Label(day.dayName, systemImage: day == vm.daySelected ? "\(day.dayNumber).square.fill" : "\(day.dayNumber).square")
                 }
-
             }
         } label: {
             Label("Cambiar día", systemImage: "calendar")
         }
     }
     
+    var orderMenu: some View {
+        Menu {
+            Button {
+                vm.orderBy = .hour
+            } label: { Label("Hora", systemImage: vm.orderBy == .hour ? "clock.fill" : "clock") }
+            Button {
+                vm.orderBy = .relevance
+            } label: { Label("Relevancia", systemImage: vm.orderBy == .relevance ? "flame.fill" : "flame") }
+        } label: {
+            Label("Ordenar", systemImage: "arrow.up.arrow.down.circle")
+        }
+    }
+    
     var filterMenu: some View {
         Menu {
-            Menu("Relevancia") {
-                ForEach(Relevance.allCases, id: \.self) { relevance in
-                    Button {
-                        vm.filterByRelevance(relevance)
-                    } label: {
-                        Label {
-                            Text(relevance.description)
-                        } icon: {
-                            if vm.relevanceFilter.contains(relevance) {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                    
-                }
-            }
-            Menu("Categoria") {
-                ForEach(Category.allCases, id: \.self) { category in
-                    Button {
-                        vm.filterByCategory(category)
-                    } label: {
-                        Label {
-                            Label(category.rawValue, systemImage: category.systemImageName)
-                        } icon: {
-                            if vm.categoryFilter.contains(category) {
-                                Image(systemName: "checkmark")
-                            }
+            ForEach(Category.allCases, id: \.self) { category in
+                Button {
+                    vm.filterByCategory(category)
+                } label: {
+                    Label {
+                        Label(category.rawValue, systemImage: category.systemImageName)
+                    } icon: {
+                        if vm.categoryFilter.contains(category) {
+                            Image(systemName: "checkmark")
                         }
                     }
                 }
@@ -110,8 +107,10 @@ struct HomeView: View {
             
             if vm.isAnyFilterEnabled {
                 Section {
-                    Button("Limpiar Filtros", role: .destructive) {
+                    Button(role: .destructive) {
                         vm.clearFilters()
+                    } label: {
+                        Label("Borrar filtros", systemImage: "trash")
                     }
                 }
             }

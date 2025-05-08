@@ -126,7 +126,6 @@ enum Media: String, CaseIterable, Codable {
 //}
 
 enum Category: String, CaseIterable, Decodable {
-    case sinCategoria = "Sin categoría"
     case economia = "Economía"
     case politica = "Política"
     case ciencia = "Ciencia"
@@ -136,10 +135,10 @@ enum Category: String, CaseIterable, Decodable {
     case deportes = "Deportes"
     case internacional = "Internacional"
     case entretenimiento = "Entretenimiento"
+//    case otras = "Otras"
     
     var systemImageName: String {
         switch self {
-        case .sinCategoria: return "questionmark"
         case .economia: return "eurosign.circle"
         case .politica: return "building.columns"
         case .ciencia: return "atom"
@@ -149,6 +148,7 @@ enum Category: String, CaseIterable, Decodable {
         case .deportes: return "sportscourt"
         case .internacional: return "globe"
         case .entretenimiento: return "popcorn"
+//        case .otras: return "questionmark"
         }
     }
 }

@@ -26,6 +26,14 @@ final class ViewModel: NSObject {
     
     var lastExecutionDate: Date?
     
+    var orderBy: OrderBy = .hour {
+        didSet {
+            withAnimation {
+                applyFilters()
+            }
+        }
+    }
+    
     // MARK: - UI State
     var daySelected: DayInfo = .today {
         didSet {
@@ -39,7 +47,9 @@ final class ViewModel: NSObject {
     var searchText: String = "" {
         didSet {
             if searchText != oldValue {
-                applyFilters()
+                withAnimation {
+                    applyFilters()
+                }
             }
         }
     }
@@ -368,39 +378,26 @@ final class ViewModel: NSObject {
     }
     
     func updateNewsToShow(withFilters: Bool) {
-        if withFilters {
-            applyFilters()
-        } else {
-            newsToShow = daySelectedNews
+        withAnimation {
+            if withFilters {
+                applyFilters()
+            } else {
+                newsToShow = daySelectedNews
+            }
         }
     }
     
     // MARK: - Filtering Methods
-    func filterByMedium(_ medium: Media) {
-        if mediaFilter.contains(medium) {
-            mediaFilter.remove(medium)
-        } else {
-            mediaFilter.insert(medium)
-        }
-        applyFilters()
-    }
-    
-    func filterByRelevance(_ relevance: Relevance) {
-        if relevanceFilter.contains(relevance) {
-            relevanceFilter.remove(relevance)
-        } else {
-            relevanceFilter.insert(relevance)
-        }
-        applyFilters()
-    }
-    
     func filterByCategory(_ category: Category) {
         if categoryFilter.contains(category) {
             categoryFilter.remove(category)
         } else {
             categoryFilter.insert(category)
         }
-        applyFilters()
+        
+        withAnimation {
+            applyFilters()
+        }
     }
     
     func applyFilters() {
@@ -439,14 +436,21 @@ final class ViewModel: NSObject {
                 }
             }
             
-            return (news1.date ?? Date.distantPast) > (news2.date ?? Date.distantPast)
+            switch orderBy {
+            case .hour:
+                return (news1.date ?? Date.distantPast) > (news2.date ?? Date.distantPast)
+            case .relevance:
+                return (news1.relevance ?? 0) > (news2.relevance ?? 0)
+            }
         }
     }
     
     func clearFilters() {
         mediaFilter.removeAll()
         categoryFilter.removeAll()
-        applyFilters()
+        withAnimation {
+            applyFilters()
+        }
     }
     
     func allCategories() -> Set<String> {

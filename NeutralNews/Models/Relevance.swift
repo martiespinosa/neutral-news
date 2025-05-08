@@ -24,3 +24,8 @@ enum Relevance: Int, CaseIterable {
         }
     }
 }
+
+enum OrderBy {
+    case hour
+    case relevance
+}
