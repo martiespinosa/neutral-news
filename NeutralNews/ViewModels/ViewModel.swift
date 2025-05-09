@@ -54,7 +54,6 @@ final class ViewModel: NSObject {
         }
     }
     var mediaFilter: Set<Media> = []
-    var relevanceFilter: Set<Relevance> = []
     var categoryFilter: Set<Category> = []
     var isAnyFilterEnabled: Bool {
         !mediaFilter.isEmpty || !categoryFilter.isEmpty
@@ -403,15 +402,12 @@ final class ViewModel: NSObject {
     func applyFilters() {
         var newsToFilter = daySelectedNews
         
-        if !mediaFilter.isEmpty || !relevanceFilter.isEmpty || !categoryFilter.isEmpty {
+        if !mediaFilter.isEmpty || !categoryFilter.isEmpty {
             newsToFilter = newsToFilter.filter { news in
-                let matchesRelevance = relevanceFilter.isEmpty || relevanceFilter.contains { relevance in
-                    news.relevance == relevance.rawValue
-                }
                 let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
                     news.category.normalized() == category.rawValue.normalized()
                 }
-                return matchesRelevance && matchesCategory
+                return matchesCategory
             }
         }
         
@@ -441,6 +437,8 @@ final class ViewModel: NSObject {
                 return (news1.date ?? Date.distantPast) > (news2.date ?? Date.distantPast)
             case .relevance:
                 return (news1.relevance ?? 0) > (news2.relevance ?? 0)
+            case .popularity:
+                return (getRelatedNews(from: news1).count) > (getRelatedNews(from: news2).count)
             }
         }
     }
