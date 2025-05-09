@@ -13,7 +13,7 @@ def store_news_in_firestore(news_list):
     
     for news in news_list:
         # Check if this news already exists in the database by URL
-        existing_news_query = db.collection('news').filter('link', '==', news.link).limit(1)
+        existing_news_query = db.collection('news').where('link', '==', news.link).limit(1)
         existing_news = [doc for doc in existing_news_query.stream()]
         
         if not existing_news:
@@ -44,14 +44,15 @@ def get_news_for_grouping():
     time_threshold = datetime.now() - timedelta(hours=24)
     
     # 1. Obtener noticias sin grupo (candidatas a ser agrupadas)
-    ungrouped_query = db.collection('news').filter('group', '==', None)
+    # Change from filter to where
+    ungrouped_query = db.collection('news').where('group', '==', None)
     ungrouped_news = list(ungrouped_query.stream())
     
     # 2. Obtener noticias recientes CON grupo (servirán como referencia)
-    # Updated to use filter keyword argument instead of where
-    recent_grouped_query = db.collection('news').filter(
+    # Change from filter to where
+    recent_grouped_query = db.collection('news').where(
         'created_at', '>=', time_threshold
-    ).filter(
+    ).where(
         'group', '!=', None
     )
     recent_grouped_news = list(recent_grouped_query.stream())
@@ -174,7 +175,7 @@ def load_all_news_links_from_medium(medium):
     """
 
     db = initialize_firebase()
-    news_query = db.collection('news').filter('source_medium', '==', medium)
+    news_query = db.collection('news').where('source_medium', '==', medium)
     news_docs = list(news_query.stream())
     
     news_links = []
