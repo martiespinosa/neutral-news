@@ -37,11 +37,26 @@ def prepare_groups_for_neutralization(grouped_news):
         grupo = noticia.get("group")
         if grupo is not None:
             grupo = int(float(grupo))
-            grupos[grupo].append({
-                "id": noticia.get("id"),
-                "title": noticia.get("title"),
-                "scraped_description": noticia.get("scraped_description"),
-                "source_medium": noticia.get("source_medium"),
-            })
+            
+            # Only add sources with non-empty title and description
+            title = noticia.get("title", "")
+            description = noticia.get("scraped_description", "")
+            
+            # Validate content before adding to group
+            if title and title.strip() and description and description.strip():
+                grupos[grupo].append({
+                    "id": noticia.get("id"),
+                    "title": title,
+                    "scraped_description": description,
+                    "source_medium": noticia.get("source_medium"),
+                })
 
-    return [{"group": g, "sources": s} for g, s in grupos.items()]
+    # Only return groups with at least 2 valid sources
+    valid_groups = [{"group": g, "sources": s} for g, s in grupos.items() if len(s) >= 2]
+    
+    # Log groups with insufficient valid sources
+    insufficient_groups = [g for g, s in grupos.items() if len(s) < 2]
+    if insufficient_groups:
+        print(f"⚠️ {len(insufficient_groups)} groups had fewer than 2 valid sources: {insufficient_groups}")
+        
+    return valid_groups
