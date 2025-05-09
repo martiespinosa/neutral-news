@@ -20,7 +20,7 @@ requests>=2.25.0
 openai
 
 # Fix for newspaper3k compatibility
-lxml==4.9.3
+lxml
 lxml_html_clean
 beautifulsoup4>=4.9.0
 newspaper3k>=0.2.8

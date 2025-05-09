@@ -2,23 +2,32 @@
 ARG PYTHON_VERSION=3.10
 FROM python:${PYTHON_VERSION}-slim AS builder
 
-# Set working directory
+# Set working directory and configure PATH
 WORKDIR /app
+ENV PATH="/root/.local/bin:$PATH"
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Add to your Dockerfile before running the application
-RUN pip install --no-cache-dir lxml==4.9.3 lxml_html_clean && \
-    pip check && \
+# Update pip first
+RUN pip install --upgrade pip
+
+# Install newspaper3k and its dependencies first
+RUN pip install --no-cache-dir lxml lxml_html_clean newspaper3k==0.2.8 && \
     python -c "from newspaper import Article; print('Newspaper import successful')"
 
-# Install base requirements first (better caching)
+# Install base requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user --default-timeout=1000 torch>=1.9.0 --extra-index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir --user --default-timeout=1000 -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=1000 torch>=1.9.0 --extra-index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir --default-timeout=1000 -r requirements.txt
+
+# Verify functions-framework is installed
+RUN pip install --no-cache-dir functions-framework && \
+    which functions-framework && \
+    functions-framework --help
 
 # Download and cache the model in a separate step
 RUN mkdir -p /app/model
@@ -32,6 +41,11 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # Final stage with minimal dependencies
 FROM python:${PYTHON_VERSION}-slim
 
+# Install curl for healthcheck BEFORE switching users
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
@@ -42,7 +56,8 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 # Copy installed packages from builder stage
-COPY --from=builder /root/.local /root/.local
+RUN mkdir -p /root/.local
+COPY --from=builder /usr/local /usr/local
 
 # Copy pre-downloaded model
 COPY --from=builder /app/model /app/model
@@ -54,6 +69,9 @@ COPY . .
 RUN useradd -m appuser && \
     chown -R appuser:appuser /app
 USER appuser
+
+# Verify functions-framework is in path
+RUN which functions-framework || echo "FUNCTIONS-FRAMEWORK NOT FOUND IN PATH: $PATH"
 
 # Expose port
 EXPOSE 8080
