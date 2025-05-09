@@ -213,7 +213,6 @@ def store_neutral_news(group, neutralization_result, source_ids):
         }
         
         neutral_news_ref.set(neutral_news_data)
-        print(f"Stored neutral news for group {group}")
         return True
         
     except Exception as e:
