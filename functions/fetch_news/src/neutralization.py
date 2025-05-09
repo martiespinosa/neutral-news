@@ -121,8 +121,16 @@ def neutralize_and_more(news_groups, batch_size=5):
             
             if current_batch_to_update:
                 valid_batch_for_update, discarded_in_update_batch = validate_batch_for_processing(current_batch_to_update)
+                
+                # Fix: Extract valid group IDs
+                valid_group_ids = [group_info['group'] for group_info in valid_batch_for_update]
+                
+                # Fix: Compare group IDs correctly
+                discarded_groups_in_batch = [group_info['group'] for group_info in current_batch_to_update 
+                                             if group_info['group'] not in valid_group_ids]
+                
                 discarded_count += discarded_in_update_batch
-                discarded_groups.extend([group_info['group'] for group_info in current_batch_to_update if group_info['group'] not in valid_batch_for_update])
+                discarded_groups.extend(discarded_groups_in_batch)
 
                 if valid_batch_for_update:
                     results = generate_neutral_analysis_batch(valid_batch_for_update)
@@ -150,8 +158,16 @@ def neutralize_and_more(news_groups, batch_size=5):
             
             if current_batch_to_neutralize:
                 valid_batch_for_neutralization, discarded_in_neutralize_batch = validate_batch_for_processing(current_batch_to_neutralize)
+                
+                # Fix: Extract valid group IDs
+                valid_group_ids = [group_info['group'] for group_info in valid_batch_for_neutralization]
+                
+                # Fix: Compare group IDs correctly
+                discarded_groups_in_batch = [group_info['group'] for group_info in current_batch_to_neutralize 
+                                             if group_info['group'] not in valid_group_ids]
+                
                 discarded_count += discarded_in_neutralize_batch
-                discarded_groups.extend([group_info['group'] for group_info in current_batch_to_neutralize if group_info['group'] not in valid_batch_for_neutralization])
+                discarded_groups.extend(discarded_groups_in_batch)
 
                 if valid_batch_for_neutralization:
                     results = generate_neutral_analysis_batch(valid_batch_for_neutralization)
@@ -435,16 +451,28 @@ def validate_batch_for_processing(batch_to_validate):
         return [], 0
 
     for group_info_to_validate in batch_to_validate:
+        group_id = group_info_to_validate.get('group', 'unknown')
         sources_to_validate = group_info_to_validate.get('sources', [])
         valid_sources_count = 0
+        valid_sources = []
+        
+        print(f"Validating group {group_id} with {len(sources_to_validate)} sources")
+        
         for source in sources_to_validate:
             title = source.get('title', '')
-            description = source.get('scraped_description', '') # Assuming 'scraped_description' is the field for content
-            if title and description: # Checks if both are non-empty
+            description = source.get('scraped_description', '')
+            
+            # Stricter validation - handles whitespace only strings too
+            if title and title.strip() and description and description.strip():
                 valid_sources_count += 1
+                valid_sources.append(source)
+        
+        print(f"Group {group_id}: Found {valid_sources_count} valid sources out of {len(sources_to_validate)}")
         
         if valid_sources_count >= 2:
             valid_groups_in_batch.append(group_info_to_validate)
         else:
             discarded_count += 1
+            print(f"⚠️ Discarding group {group_id}: Only {valid_sources_count} valid sources (need at least 2)")
+            
     return valid_groups_in_batch, discarded_count
