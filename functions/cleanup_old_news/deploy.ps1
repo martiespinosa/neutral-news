@@ -13,7 +13,7 @@ gcloud run deploy cleanup-old-news-service `
   --region us-central1 `
   --memory 4096M `
   --cpu 1 `
-  --timeout 540 `
+  --timeout 360 `
   --allow-unauthenticated
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Cloud Run deployment failed."

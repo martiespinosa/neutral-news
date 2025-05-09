@@ -44,11 +44,17 @@ def get_news_for_grouping():
     time_threshold = datetime.now() - timedelta(hours=24)
     
     # 1. Obtener noticias sin grupo (candidatas a ser agrupadas)
+    # Change from filter to where
     ungrouped_query = db.collection('news').where('group', '==', None)
     ungrouped_news = list(ungrouped_query.stream())
     
     # 2. Obtener noticias recientes CON grupo (servirán como referencia)
-    recent_grouped_query = db.collection('news').where('created_at', '>=', time_threshold).where('group', '!=', None)
+    # Change from filter to where
+    recent_grouped_query = db.collection('news').where(
+        'created_at', '>=', time_threshold
+    ).where(
+        'group', '!=', None
+    )
     recent_grouped_news = list(recent_grouped_query.stream())
     
     # Preparar diccionario para todos los documentos
@@ -213,7 +219,6 @@ def store_neutral_news(group, neutralization_result, source_ids):
         }
         
         neutral_news_ref.set(neutral_news_data)
-        print(f"Stored neutral news for group {group}")
         return True
         
     except Exception as e:

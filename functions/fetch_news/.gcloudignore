@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+fetch_news/tests/*
+fetch_news/tests/.gitkeep

@@ -85,3 +85,7 @@ __pycache__/
 *.pyo
 functions/__pycache__/main.cpython-312.pyc
 functions/src/__pycache__/models.cpython-312.pyc
+
+neutralnews-ca548-firebase-adminsdk-fbsvc-b2a2b9fa03.json
+
+functions/playground/select/results

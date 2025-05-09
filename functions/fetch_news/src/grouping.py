@@ -141,7 +141,7 @@ def group_news(news_list: list):
             to_group_count = (~reference_mask).sum()
             if to_group_count == 0:
                 print("ℹ️ All news items already have groups. No new grouping needed.")
-                return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+                return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
         else:
             df["is_reference"] = False
             
@@ -151,11 +151,11 @@ def group_news(news_list: list):
         items_to_potentially_group_df = df[~df["is_reference"]]
         if len(items_to_potentially_group_df) == 0 and has_reference_news:
             print("ℹ️ No new items to group, only reference news present.")
-            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+            return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
         if len(items_to_potentially_group_df) <= 1 and not has_reference_news:
             print("ℹ️ Only one new item to group and no reference news. Assigning to group 0.")
             df.loc[~df["is_reference"], "group"] = 0
-            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+            return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
 
         # Prepare a DataFrame that will hold all items from the input 'df'
         # and their corresponding embeddings.
@@ -241,7 +241,7 @@ def group_news(news_list: list):
         
         if all_items_for_clustering_df.empty:
             print("❌ No items with embeddings available for clustering.")
-            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+            return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
 
         # Extract the list of embedding vectors for clustering
         # The 'embedding_vector' column now stores lists containing single numpy arrays. We need to stack them.
@@ -249,8 +249,8 @@ def group_news(news_list: list):
 
         if embeddings_for_clustering_np.shape[0] == 0:
             print("❌ No embeddings available for clustering after processing.")
-            return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
-        
+            return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
+
         # STEP 3: Normalize embeddings for cosine similarity
         print("ℹ️ Normalizing embeddings for cosine similarity...")
         norms = np.linalg.norm(embeddings_for_clustering_np, axis=1, keepdims=True)
@@ -268,7 +268,7 @@ def group_news(news_list: list):
              # Update original df based on all_items_for_clustering_df's groups
              for index, row_clustered in all_items_for_clustering_df.iterrows():
                  df.loc[df['id'] == row_clustered['id'], 'group'] = row_clustered['group']
-             return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+             return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
 
 
         nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(embeddings_norm)
@@ -382,8 +382,12 @@ def group_news(news_list: list):
             for _, item_row in reference_items_in_final_group.iterrows():
                 if item_row["source_medium"] not in seen_media_in_group:
                     current_group_items_for_result.append({
-                        "id": item_row["id"], "group": group_id, "title": item_row["title"],
-                        "scraped_description": item_row["scraped_description"], "source_medium": item_row["source_medium"]
+                        "id": item_row["id"], 
+                        "group": group_id, 
+                        "title": item_row["title"],
+                        "scraped_description": item_row["scraped_description"],
+                        "description": item_row.get("description", ""),  # Add this line
+                        "source_medium": item_row["source_medium"]
                     })
                     seen_media_in_group.add(item_row["source_medium"])
                     processed_ids_for_result.add(item_row["id"])
@@ -394,8 +398,12 @@ def group_news(news_list: list):
                 if item_row["id"] not in processed_ids_for_result: # Ensure not already added as a reference
                     if item_row["source_medium"] not in seen_media_in_group:
                         current_group_items_for_result.append({
-                            "id": item_row["id"], "group": group_id, "title": item_row["title"],
-                            "scraped_description": item_row["scraped_description"], "source_medium": item_row["source_medium"]
+                            "id": item_row["id"], 
+                            "group": group_id, 
+                            "title": item_row["title"],
+                            "scraped_description": item_row["scraped_description"],
+                            "description": item_row.get("description", ""),  # Add this line
+                            "source_medium": item_row["source_medium"]
                         })
                         seen_media_in_group.add(item_row["source_medium"])
                         processed_ids_for_result.add(item_row["id"])
@@ -413,8 +421,11 @@ def group_news(news_list: list):
         for index, row in df.iterrows():
             if row["id"] not in processed_ids_for_result:
                 result.append({
-                    "id": row["id"], "group": row["group"], # Use its current group (could be None)
-                    "title": row["title"], "scraped_description": row["scraped_description"],
+                    "id": row["id"], 
+                    "group": row["group"],
+                    "title": row["title"], 
+                    "scraped_description": row["scraped_description"],
+                    "description": row.get("description", ""),  # Add this line
                     "source_medium": row["source_medium"]
                 })
         
@@ -438,7 +449,7 @@ def group_news(news_list: list):
         # to allow the main process to continue if possible, or handle more gracefully.
         # For now, returning what might be partially processed.
         if 'df' in locals() and isinstance(df, pd.DataFrame):
-             return df[["id", "group", "title", "scraped_description", "source_medium"]].to_dict(orient='records')
+             return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
         return [] # Fallback if df is not defined
 
 def extract_titles_and_descriptions(df_embeddings):
