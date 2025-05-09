@@ -1,7 +1,7 @@
-google-cloud-firestore==2.*
-google-cloud-storage==2.*
+google-cloud-firestore>=2.0.0
+google-cloud-storage>=2.0.0
 firebase-functions>=0.1.4
-functions-framework==3.3.0
+functions-framework>=3.3.0
 firebase-admin>=6.0.0
 sentence-transformers>=2.2.0
 torch>=1.9.0 --extra-index-url https://download.pytorch.org/whl/cpu
