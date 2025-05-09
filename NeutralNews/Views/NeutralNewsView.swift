@@ -99,7 +99,7 @@ struct NeutralNewsView: View {
                                     .buttonStyle(.plain)
                                 }
                             }
-                            .padding(.leading, 16)
+                            .padding(.horizontal, 16)
                         }
                     }
                     .frame(minHeight: geometry.size.height)
