@@ -83,7 +83,10 @@ struct HomeView: View {
             } label: { Label("Hora", systemImage: vm.orderBy == .hour ? "clock.fill" : "clock") }
             Button {
                 vm.orderBy = .relevance
-            } label: { Label("Relevancia", systemImage: vm.orderBy == .relevance ? "flame.fill" : "flame") }
+            } label: { Label("Relevancia", systemImage: vm.orderBy == .relevance ? "bolt.fill" : "bolt") }
+            Button {
+                vm.orderBy = .popularity
+            } label: { Label("Popularidad", systemImage: vm.orderBy == .popularity ? "flame.fill" : "flame") }
         } label: {
             Label("Ordenar", systemImage: "arrow.up.arrow.down.circle")
         }
