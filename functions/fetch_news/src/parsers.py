@@ -432,8 +432,9 @@ def fetch_all_rss(max_workers=10):
             return news
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
-                scraper.logger.error(f"Failed to fetch feed from {medium}: {e}")
-                # Try to continue despite 403 error - just return empty list
+                scraper.logger.error(f"Failed to fetch feed from {medium}: 403 Forbidden - The server understood the request but refused authorization. This could be due to anti-scraping measures despite robots.txt access.")
+                # Log the headers we're using
+                scraper.logger.info(f"Request headers used: {session.headers}")
                 return []
             else:
                 scraper.logger.error(f"HTTP error fetching feed from {medium}: {e}")
