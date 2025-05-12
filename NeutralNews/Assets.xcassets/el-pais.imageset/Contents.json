@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "elpais.png",
+      "filename" : "el-pais.svg",
       "idiom" : "universal"
     },
     {
@@ -11,7 +11,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "elpais-dark.png",
+      "filename" : "el-pais-dark.svg",
       "idiom" : "universal"
     }
   ],

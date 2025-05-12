@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "abc.svg",
+      "filename" : "el-mundo.svg",
       "idiom" : "universal"
     },
     {
@@ -11,7 +11,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "abc-dark.svg",
+      "filename" : "el-mundo-dark.svg",
       "idiom" : "universal"
     }
   ],

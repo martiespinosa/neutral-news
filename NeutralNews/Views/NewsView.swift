@@ -26,6 +26,9 @@ struct NewsView: View {
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        // TODO: Quitar la fecha o formatearla
+                        Text(news.pubDate)
+                        
                         // TODO: Pedir permiso para usar los logos de los medios?
                         if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
                             Image(uiImage: uiImage)
