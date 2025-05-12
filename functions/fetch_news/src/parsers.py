@@ -430,6 +430,14 @@ def fetch_all_rss(max_workers=10):
             news = parse_xml(r.text, medium, scraper, robots_checker)
             scraper.logger.info(f"[{current}/{total_media}] Completed: {medium} - {len(news)} articles")
             return news
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                scraper.logger.error(f"Failed to fetch feed from {medium}: {e}")
+                # Try to continue despite 403 error - just return empty list
+                return []
+            else:
+                scraper.logger.error(f"HTTP error fetching feed from {medium}: {e}")
+                return []
         except Exception as e:
             scraper.logger.error(f"Failed to fetch feed from {medium}: {e}")
             return []

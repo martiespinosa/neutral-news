@@ -19,12 +19,15 @@ def process_news_groups():
                 
         # Update groups in Firestore
         updated_count = update_groups_in_firestore(grouped_news, news_docs)
+        print(f"Updated {updated_count} groups in Firestore")
 
         # Neutralizar los grupos recién creados y guardarlos
         groups_prepared = prepare_groups_for_neutralization(grouped_news)
+        print(f"ℹ️ Prepared {len(groups_prepared)} news groups for neutralization")
+        
         neutralized_count = neutralize_and_more(groups_prepared)
 
-        print(f"{updated_count} individual news items were updated with neutrality scores, neutralized {neutralized_count} groups")
+        print(f"Neutralized {neutralized_count} groups")
     except Exception as e:
         print(f"Error in process_news_groups: {str(e)}")
         traceback.print_exc()

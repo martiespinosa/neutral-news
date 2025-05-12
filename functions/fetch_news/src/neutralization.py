@@ -34,7 +34,6 @@ def neutralize_and_more(news_groups, batch_size=5):
         to_neutralize_count = 0
         to_neutralize_ids = []
         
-        print(f"ℹ️ Processing {len(news_groups)} news groups for neutralization")
         for group in news_groups:   
             group_number = group.get('group')
             if group_number is not None:
@@ -101,6 +100,8 @@ def neutralize_and_more(news_groups, batch_size=5):
         updated_count = 0
         updated_groups = []
         
+        updated_neutral_scores_count = 0
+        
         db = initialize_firebase()
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
@@ -129,13 +130,11 @@ def neutralize_and_more(news_groups, batch_size=5):
                     source_ids = group_info['source_ids']
                     
                     # Actualizar el documento existente en neutral_news
-                    update_existing_neutral_news(group, result, source_ids)
-                    
+                    if (update_existing_neutral_news(group, result, source_ids)):
+                        updated_count += 1
+                        updated_groups.append(group)
                     # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    updated_count += 1
-                    updated_groups.append(group)
+                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
 
         print(f"ℹ️ Creating neutralization for {len(groups_to_neutralize)} groups")
         for i in range(0, len(groups_to_neutralize), batch_size):
@@ -156,18 +155,15 @@ def neutralize_and_more(news_groups, batch_size=5):
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
-                    # Guardar el resultado en la colección neutral_news con los IDs de fuente
-                    store_neutral_news(group, result, source_ids)
+                    if (store_neutral_news(group, result, source_ids)):
+                        neutralized_groups.append(group)
+                        neutralized_count += 1
+                
+                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
                     
-                    # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    neutralized_count += 1
-                    neutralized_groups.append(group)
-        
-        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups")
+        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
-        print(f"Updated groups: {updated_groups}")
+        print(f"Groups updated with new neutralization: {updated_groups}")
         return neutralized_count + updated_count
 
     except Exception as e:
