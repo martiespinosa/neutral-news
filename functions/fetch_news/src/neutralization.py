@@ -228,6 +228,7 @@ def generate_neutral_analysis_batch(group_batch):
     }
     """
     
+    SOURCES_LIMIT = 5  # Maximum number of sources to process
     system_token_estimate = len(system_message) * TOKEN_RATIO
     
     try:
@@ -244,8 +245,15 @@ def generate_neutral_analysis_batch(group_batch):
             
             if len(valid_sources) < 2:
                 results.append(None)
+                print(f"⚠️ Not enough valid sources for group {group_id}. Skipping.")
                 continue
-                
+            
+            # Limit to maximum 5 sources per group, sort by description length (shortest first)
+            if len(valid_sources) > SOURCES_LIMIT:
+                valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
+                valid_sources = valid_sources[:SOURCES_LIMIT]
+                print(f"ℹ️ Limiting group {group_id} to {SOURCES_LIMIT} sources (from {len(sources)} original sources)")
+
             # Calculate average description length for this group
             avg_desc_length = sum(len(s['scraped_description']) for s in valid_sources) / len(valid_sources)
             
