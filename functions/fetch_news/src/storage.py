@@ -36,55 +36,59 @@ def store_news_in_firestore(news_list):
     print(f"Saved {news_count} new news to Firestore")
     return news_count
 
-def get_news_for_grouping():
+def get_news_for_grouping() -> tuple:
     """
     Get news items for grouping process with improved reference selection
     """
     db = initialize_firebase()
     
+    UNGROUPED_NEWS_DAYS = 1 # Number of days to look back for ungrouped news
+    RECENT_GROUPS_DAYS = 2 # Number of days to look back for recent groups
+    REFERENCE_NEWS_DAYS = 3 # Number of days to look back for reference news
+
     # 1. Get ungrouped news (same as before)
-    ungrouped_query = db.collection('news').where('group', '==', None)
+    ungrouped_time_threshold = datetime.now() - timedelta(days=UNGROUPED_NEWS_DAYS)
+    ungrouped_query = db.collection('news').where(
+            'created_at', '>=', ungrouped_time_threshold
+        ).where('group', '==', None)
     ungrouped_news = list(ungrouped_query.stream())
+    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_DAYS} days")
     
-    # 2. Get recent groups first
-    extended_time_threshold = datetime.now() - timedelta(days=1)
-    
-    # First, query to get all recent unique group IDs
-    recent_groups_query = db.collection('news').where(
-        'created_at', '>=', extended_time_threshold
-    ).where(
-        'group', '!=', None
+    # 2. Get recent unique group IDs
+    recent_groups_time_threshold = datetime.now() - timedelta(days=RECENT_GROUPS_DAYS)
+    recent_groups = db.collection('neutral_news').where(
+        'created_at', '>=', recent_groups_time_threshold
     )
-    
-    # Get all documents but extract just the unique group IDs
-    recent_grouped_docs = list(recent_groups_query.stream())
-    unique_group_ids = set()
-    for doc in recent_grouped_docs:
+
+    recent_groups_list = list(recent_groups.stream())
+    recent_groups_ids = set()
+    for doc in recent_groups_list:
         data = doc.to_dict()
         if 'group' in data and data['group'] is not None:
-            unique_group_ids.add(data['group'])
-
-    print(f"Found {len(unique_group_ids)} unique group IDs in the last 1 day")
+            recent_groups_ids.add(data['group'])
+    print(f"Found {len(recent_groups_ids)} unique group IDs in the last {RECENT_GROUPS_DAYS} days")
     
-    # 3. Now fetch news items belonging to these groups from thbe last days
+    # 3. Now fetch news items belonging to these groups from the last days
+    reference_groups_time_threshold = datetime.now() - timedelta(days=REFERENCE_NEWS_DAYS)
     reference_news = []
-    for group_id in unique_group_ids:
+    for group_id in recent_groups_ids:
         group_news_query = db.collection('news').where(
-            'created_at', '>=', extended_time_threshold
+            'created_at', '>=', reference_groups_time_threshold
         ).where(
             'group', '==', group_id)
         group_news = list(group_news_query.stream())
         reference_news.extend(group_news)
-    
-    print(f"Fetched {len(reference_news)} total reference news items from {len(unique_group_ids)} groups")
-    
+        
+    print(f"Found {len(reference_news)} reference news items in the last {REFERENCE_NEWS_DAYS} days")
+    print(f"Fetched {len(reference_news)} total reference news items from {len(recent_groups_ids)} groups")
+
     # Prepare dictionary for all documents
-    all_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
+    news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
     
     # 3. Convertir documentos al formato de procesamiento
-    combined_news = []
+    news_for_grouping = []
     
-    for doc in all_docs.values():
+    for doc in news_docs.values():
         data = doc.to_dict()
     
         
@@ -101,12 +105,12 @@ def get_news_for_grouping():
         if data.get("group") is not None:
             news_item["existing_group"] = data["group"]
         
-        combined_news.append(news_item)
+        news_for_grouping.append(news_item)
     
     print(f"Got {len(ungrouped_news)} news to group and {len(reference_news)} reference news")
-    return combined_news, all_docs
+    return news_for_grouping, news_docs
 
-def update_groups_in_firestore(grouped_news, news_docs):
+def update_groups_in_firestore(grouped_news: list, news_docs: dict) -> int:
     """
     Update group assignments in Firestore
     """
