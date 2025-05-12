@@ -34,7 +34,6 @@ def neutralize_and_more(news_groups, batch_size=5):
         to_neutralize_count = 0
         to_neutralize_ids = []
         
-        print(f"ℹ️ Processing {len(news_groups)} news groups for neutralization")
         for group in news_groups:   
             group_number = group.get('group')
             if group_number is not None:
@@ -101,6 +100,8 @@ def neutralize_and_more(news_groups, batch_size=5):
         updated_count = 0
         updated_groups = []
         
+        updated_neutral_scores_count = 0
+        
         db = initialize_firebase()
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
@@ -116,6 +117,10 @@ def neutralize_and_more(news_groups, batch_size=5):
                 # Removed validation - directly process the batch
                 results = generate_neutral_analysis_batch(current_batch_to_update)
                 
+                if results is None:
+                    print("⚠️ Stopping processing due to rate limit or quota exceeded.")
+                    break
+                
                 for result, group_info in zip(results, current_batch_to_update):
                     if not result:
                         continue
@@ -125,13 +130,11 @@ def neutralize_and_more(news_groups, batch_size=5):
                     source_ids = group_info['source_ids']
                     
                     # Actualizar el documento existente en neutral_news
-                    update_existing_neutral_news(group, result, source_ids)
-                    
+                    if (update_existing_neutral_news(group, result, source_ids)):
+                        updated_count += 1
+                        updated_groups.append(group)
                     # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    updated_count += 1
-                    updated_groups.append(group)
+                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
 
         print(f"ℹ️ Creating neutralization for {len(groups_to_neutralize)} groups")
         for i in range(0, len(groups_to_neutralize), batch_size):
@@ -140,6 +143,9 @@ def neutralize_and_more(news_groups, batch_size=5):
             if current_batch_to_neutralize:
                 # Removed validation - directly process the batch
                 results = generate_neutral_analysis_batch(current_batch_to_neutralize)
+                if results is None:
+                    print("⚠️ Stopping processing due to rate limit or quota exceeded.")
+                    break
                 
                 for result, group_info in zip(results, current_batch_to_neutralize):
                     if not result:
@@ -149,18 +155,15 @@ def neutralize_and_more(news_groups, batch_size=5):
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
-                    # Guardar el resultado en la colección neutral_news con los IDs de fuente
-                    store_neutral_news(group, result, source_ids)
+                    if (store_neutral_news(group, result, source_ids)):
+                        neutralized_groups.append(group)
+                        neutralized_count += 1
+                
+                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
                     
-                    # Actualizar las noticias originales con su puntuación de neutralidad
-                    update_news_with_neutral_scores(sources, result)
-                    
-                    neutralized_count += 1
-                    neutralized_groups.append(group)
-        
-        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups")
+        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
-        print(f"Updated groups: {updated_groups}")
+        print(f"Groups updated with new neutralization: {updated_groups}")
         return neutralized_count + updated_count
 
     except Exception as e:
@@ -253,12 +256,14 @@ def generate_neutral_analysis_batch(group_batch):
                 if desc_len > (avg_desc_length * 3) and desc_len > 10000:
                     truncated_length = int(max(avg_desc_length * 2, 10000))
                     source['scraped_description'] = source['scraped_description'][:truncated_length] + "... [truncated due to excessive length]"
-                    
-            # Now build the message with all sources
+            
+            # Try to include as many sources as possible within token limits
             sources_text = ""
             total_token_estimate = system_token_estimate
+            base_message_length = len("Analiza las siguientes fuentes de noticias:\n\n") * TOKEN_RATIO
+            total_token_estimate += base_message_length
             
-            # First pass: try to include all sources with minimal truncation
+            # Start with regular processing of sources
             for i, source in enumerate(valid_sources):
                 source_text = f"Fuente {i+1}: {source['source_medium']}\n"
                 source_text += f"Titular: {source['title']}\n"
@@ -266,74 +271,68 @@ def generate_neutral_analysis_batch(group_batch):
                 
                 source_token_estimate = len(source_text) * TOKEN_RATIO
                 
-                # If this source would push us over the limit, we need to truncate
+                # If this source would push us over the limit, we need to truncate or stop
                 if total_token_estimate + source_token_estimate > MAX_TOKENS:
-                    # Calculate how many tokens we can still use
+                    # If we already have at least 2 sources, stop adding more
+                    if i >= 2:
+                        print(f"⚠️ Stopping at {i} sources for group {group_id} due to token limit")
+                        break
+                        
+                    # Otherwise we need this source but must truncate it
                     remaining_tokens = MAX_TOKENS - total_token_estimate
-                    # Convert to chars (approximate)
                     remaining_chars = int(remaining_tokens / TOKEN_RATIO)
-                    # Truncate source text to fit
-                    truncated_text = source_text[:remaining_chars]
-                    # Add truncation notice
-                    truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated due to token limit]\n\n"
-                    sources_text += truncated_text
                     
-                    break  # Stop adding more sources after truncation
+                    if remaining_chars > 500:  # If we can include at least some meaningful content
+                        truncated_text = source_text[:remaining_chars]
+                        truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated due to token limit]\n\n"
+                        sources_text += truncated_text
+                        print(f"⚠️ Truncated source {i+1} for group {group_id} due to token limit")
+                    break
                 else:
                     sources_text += source_text
                     total_token_estimate += source_token_estimate
             
-            user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
-            
-            # Final token check
-            final_estimate = (len(user_message) + len(system_message)) * TOKEN_RATIO
-            if final_estimate > MAX_TOKENS:
+            # If we couldn't add enough sources with regular processing, try shorter versions
+            if len(sources_text.strip()) == 0 or sources_text.count("Fuente ") < 2:
+                print(f"⚠️ Using shorter descriptions for group {group_id} due to token limit")
+                # Sort by shortest descriptions first
+                valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
                 
-                # If still too large, take more drastic measures
-                # Try again, but only include a subset of sources (at least 2)
-                if len(valid_sources) > 2:
-                    # Sort sources by length (shortest first)
-                    valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
+                sources_text = ""
+                total_token_estimate = system_token_estimate + base_message_length
+                
+                for i, source in enumerate(valid_sources):
+                    source_text = f"Fuente {i+1}: {source['source_medium']}\n"
+                    source_text += f"Titular: {source['title']}\n"
                     
-                    # Only use the necessary number of sources
-                    sources_text = ""
-                    total_token_estimate = system_token_estimate
-                    included_count = 0
+                    # Use more aggressive truncation for descriptions
+                    desc = source['scraped_description']
+                    if len(desc) > 5000:
+                        desc = desc[:5000] + "... [truncated]"
                     
-                    for i, source in enumerate(valid_sources):
-                        source_text = f"Fuente {i+1}: {source['source_medium']}\n"
-                        source_text += f"Titular: {source['title']}\n"
+                    source_text += f"Descripción: {desc}\n\n"
+                    source_token_estimate = len(source_text) * TOKEN_RATIO
+                    
+                    if total_token_estimate + source_token_estimate < MAX_TOKENS:
+                        sources_text += source_text
+                        total_token_estimate += source_token_estimate
                         
-                        # Truncate very long descriptions more aggressively
-                        desc = source['scraped_description']
-                        if len(desc) > 5000:
-                            desc = desc[:5000] + "... [truncated due to length]"
-                            
-                        source_text += f"Descripción: {desc}\n\n"
-                        
-                        source_token_estimate = len(source_text) * TOKEN_RATIO
-                        
-                        if total_token_estimate + source_token_estimate < MAX_TOKENS:
-                            sources_text += source_text
-                            total_token_estimate += source_token_estimate
-                            included_count += 1
-                        else:
-                            # If we already have 2+ sources, stop here
-                            if included_count >= 2:
-                                break
-                                
-                            # Otherwise, we need this source but must truncate it
+                        # If we have at least 2 sources and are running out of space, stop
+                        if i >= 1 and total_token_estimate > (MAX_TOKENS * 0.9):
+                            break
+                    else:
+                        # If we don't have 2 sources yet, we must include at least a truncated version
+                        if i < 2:
                             remaining_tokens = MAX_TOKENS - total_token_estimate
                             remaining_chars = int(remaining_tokens / TOKEN_RATIO)
                             
-                            if remaining_chars > 500:  # If we can include at least some meaningful content
+                            if remaining_chars > 500:
                                 truncated_text = source_text[:remaining_chars]
-                                truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated due to token limit]\n\n"
+                                truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated]\n\n"
                                 sources_text += truncated_text
-                                included_count += 1
-                            break
-                    
-                    user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
+                        break
+            
+            user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
             
             # Call OpenAI API with retries
             max_retries = 3
@@ -357,19 +356,25 @@ def generate_neutral_analysis_batch(group_batch):
                     break  # Success
                     
                 except Exception as e:
+                    error_message = str(e)
+                    
+                    # Check for rate limit/quota errors (429) immediately
+                    if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
+                        print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
+                        return None
+                    
+                    # Handle token limit errors by reducing to minimum sources
                     if "context_length_exceeded" in str(e) and len(valid_sources) > 2:
-                        # Token limit error despite our precautions - reduce sources further
-                        # Sort sources by length (shortest first)
+                        # Take just 2 shortest sources with aggressive truncation
                         valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
                         
-                        # Reduce to just the 2 smallest sources
                         sources_text = ""
                         for i in range(min(2, len(valid_sources))):
                             source = valid_sources[i]
                             sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
                             sources_text += f"Titular: {source['title']}\n"
                             
-                            # Truncate descriptions to ensure we fit
+                            # Very aggressive truncation
                             desc = source['scraped_description']
                             if i == 0 and len(desc) > 5000:
                                 desc = desc[:5000] + "... [truncated]"
@@ -384,7 +389,7 @@ def generate_neutral_analysis_batch(group_batch):
                     
                     # For other errors, use standard retry
                     retry_count += 1
-                    print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {str(e)}")
+                    print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {error_message}")
                     
                     if retry_count < max_retries:
                         import time
@@ -396,7 +401,9 @@ def generate_neutral_analysis_batch(group_batch):
                         import traceback
                         traceback.print_exc()
             
-            results.append(result)
+            # Only append the result if we didn't encounter a rate limit error
+            if retry_count < max_retries or result is not None:
+                results.append(result)
                 
         return results
         

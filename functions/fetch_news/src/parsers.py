@@ -104,13 +104,19 @@ class SafeSession(requests.Session):
         self.logger = Logger("SafeSession")
 
     def get(self, url, *args, **kwargs):
+        is_rss_feed = kwargs.pop('is_rss_feed', False)
         check_result = self.robots_checker.can_fetch(url)
         
         if check_result is not True:
             _, reason = check_result
-            error_msg = f"Blocked by robots.txt: {url} - {reason}"
-            self.logger.warning(error_msg)
-            raise PermissionError(error_msg)
+            if is_rss_feed:
+                # For RSS feeds, just warn but continue
+                self.logger.warning(f"RSS feed possibly blocked by robots.txt: {url} - {reason}")
+            else:
+                # For content scraping, block access
+                error_msg = f"Blocked by robots.txt: {url} - {reason}"
+                self.logger.warning(error_msg)
+                raise PermissionError(error_msg)
             
         return super().get(url, *args, **kwargs)
 
@@ -328,17 +334,21 @@ def process_feed_items_parallel(items, medium, scraper, robots_checker, max_work
             if scraper.needs_scraping(desc_len) and link:
                 try:
                     can_fetch_result = robots_checker.can_fetch(link)
-                    if can_fetch_result is True: # Explicitly check for True
+                    if can_fetch_result is True: 
                         scr_desc = scraper.scrape_content(link)
                     else:
+                        # When robots.txt blocks content scraping, use the basic description
+                        # and log but continue processing
                         scraper.error_counts["blocked_by_robots"] += 1
                         if isinstance(can_fetch_result, tuple) and len(can_fetch_result) == 2:
-                             scraper.logger.warning(f"Blocked by robots.txt: {link} - Reason: {can_fetch_result[1]}")
+                            scraper.logger.warning(f"Blocked by robots.txt: {link} - Reason: {can_fetch_result[1]}")
+                        # Use the description we already have instead of scraping
+                        scr_desc = desc if desc else ""
                 except Exception as r_exc:
                     scraper.logger.error(f"Exception during robots_checker.can_fetch for link {link}: {r_exc}", exc_info=True)
-                    # Decide how to handle: maybe scr_desc remains "" or you skip scraping
-                    # This exception would otherwise be caught by the main try-except of process_item
-
+                    # Use the existing description if there's any issue
+                    scr_desc = desc if desc else ""
+            
             return News(
                 title=title,
                 description=desc,
@@ -414,11 +424,21 @@ def fetch_all_rss(max_workers=10):
             return []
             
         try:
-            r = session.get(pm.link, timeout=8)
+            # Mark this request as an RSS feed
+            r = session.get(pm.link, timeout=8, is_rss_feed=True)
             r.raise_for_status()
             news = parse_xml(r.text, medium, scraper, robots_checker)
             scraper.logger.info(f"[{current}/{total_media}] Completed: {medium} - {len(news)} articles")
             return news
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                scraper.logger.error(f"Failed to fetch feed from {medium}: 403 Forbidden - The server understood the request but refused authorization. This could be due to anti-scraping measures despite robots.txt access.")
+                # Log the headers we're using
+                scraper.logger.info(f"Request headers used: {session.headers}")
+                return []
+            else:
+                scraper.logger.error(f"HTTP error fetching feed from {medium}: {e}")
+                return []
         except Exception as e:
             scraper.logger.error(f"Failed to fetch feed from {medium}: {e}")
             return []
