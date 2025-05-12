@@ -278,7 +278,8 @@ def generate_neutral_analysis_batch(group_batch):
                     truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated due to token limit]\n\n"
                     sources_text += truncated_text
                     
-                    break  # Stop adding more sources after truncation
+                    print(f"⚠️ Truncated source {i+1} for group {group_id} due to token limit")
+                    break 
                 else:
                     sources_text += source_text
                     total_token_estimate += source_token_estimate
@@ -384,7 +385,15 @@ def generate_neutral_analysis_batch(group_batch):
                     
                     # For other errors, use standard retry
                     retry_count += 1
-                    print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {str(e)}")
+                    error_message = str(e)
+                    print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {error_message}")
+                    
+                    # Check for rate limit/quota errors (429)
+                    if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
+                        print(f"⛔ Rate limit or quota exceeded for group {group_id}. Not retrying.")
+                        import traceback
+                        traceback.print_exc()
+                        break  # Exit retry loop immediately for quota/rate limit issues
                     
                     if retry_count < max_retries:
                         import time

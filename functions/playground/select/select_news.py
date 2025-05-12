@@ -15,8 +15,8 @@ python select_news.py --collection news `
   --fields description,scraped_description,title `
   --match-type any `
   --filter-type contains `
-  --value lautaro `
-  --limit 1000 `
+  --value "barcelona"`
+  --limit 25 `
   --output table `
   --no-interactive
 
@@ -59,6 +59,18 @@ python select_news.py --collection news `
 python select_news.py --collection news `
   --equality-filter "source_medium:expansion" `
   --time-filter "hours:12" `
+  --limit 200 `
+  --export excel `
+  --exclude-embeddings `
+  --export-path "./results/politics" `
+  --no-interactive
+  
+python select_news.py --collection news `
+  --fields description,scraped_description,title `
+  --match-type any `
+  --filter-type contains `
+  --value lautaro `
+  --time-filter "hours:24" `
   --limit 200 `
   --export excel `
   --exclude-embeddings `
