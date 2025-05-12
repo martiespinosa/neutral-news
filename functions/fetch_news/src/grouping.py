@@ -368,7 +368,12 @@ def assign_group_ids(df, has_reference_news):
                 if most_common_group in large_groups:
                     # Look for alternative groups that aren't in large_groups
                     alternative_found = False
-                    if len(group_counts) > 1:
+                    
+                    # First check if this cluster has enough items for subdivision
+                    has_enough_for_subdivision = len(current_items) > MIN_SUBDIVISION_SIZE
+                    
+                    # Only look for alternatives if not enough items for subdivision
+                    if not has_enough_for_subdivision and len(group_counts) > 1:
                         # Sort by count descending (but exclude large groups)
                         for group_id, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
                             if group_id not in large_groups:
@@ -384,8 +389,8 @@ def assign_group_ids(df, has_reference_news):
                         embeddings = np.array([np.array(emb) if isinstance(emb, list) else emb 
                                            for emb in current_items['embedding'].values if emb is not None])
                         
-                        # Use a high threshold for large groups to prevent frequent updates
-                        similarity_threshold = 0.9 if most_common_group in large_groups else 0.7
+                        # For subdivision candidates, use a lower threshold to prefer subdivision
+                        similarity_threshold = 0.8 if has_enough_for_subdivision else 0.9
                         
                         if len(embeddings) >= 2:
                             # Calculate pairwise similarities
@@ -397,10 +402,10 @@ def assign_group_ids(df, has_reference_news):
                             
                             avg_similarity = sum(similarities) / len(similarities) if similarities else 0
                             
-                            # Only assign to large group if similarity is very high
-                            if avg_similarity > similarity_threshold:
+                            # If enough items for subdivision, always assign to large group
+                            if has_enough_for_subdivision or avg_similarity > similarity_threshold:
                                 target_existing_group = most_common_group
-                                print(f"ℹ️ High similarity ({avg_similarity:.3f}) - assigning to large group {most_common_group}")
+                                print(f"ℹ️ {'Cluster large enough for subdivision' if has_enough_for_subdivision else 'High similarity'} - assigning to large group {most_common_group}")
                             else:
                                 # Create new group instead
                                 target_existing_group = next_new_group_id
@@ -462,6 +467,7 @@ def assign_group_ids(df, has_reference_news):
                 max_assigned_new_group = numeric_groups.max() if not numeric_groups.empty else -1
                 next_new_group_id = max(max_existing_group, max_assigned_new_group) + 1
                 df.loc[(df['temp_group'] == new_db_group_id) & (df['group'].isna()), 'group'] = next_new_group_id
+                print(f"ℹ️ Assigned DBSCAN group {new_db_group_id} to new group {next_new_group_id}.")
     else:
         print("ℹ️ No reference news. Assigning DBSCAN groups directly.")
         df.loc[df['group'].isna(), 'group'] = df['temp_group']

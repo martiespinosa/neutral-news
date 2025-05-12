@@ -102,14 +102,15 @@ def neutralize_and_more(news_groups, batch_size=5):
         
         updated_neutral_scores_count = 0
         
-        db = initialize_firebase()
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
         print(f"Groups to neutralize: {len(groups_to_neutralize)}. IDs: {to_neutralize_ids}")
         print(f"Groups with no sources: {no_sources_count}. IDs: {no_sources_ids}")
         print(f"Groups with no group number: {no_group_count}. IDs: {no_group_ids}")
-        
+        return 0
         print(f"ℹ️ Updating neutralization of {len(groups_to_update)} groups")
+        db = initialize_firebase()
+        
         for i in range(0, len(groups_to_update), batch_size):
             current_batch_to_update = groups_to_update[i:i+batch_size]
             

@@ -24,7 +24,7 @@ def process_news_groups():
         # Neutralizar los grupos recién creados y guardarlos
         groups_prepared = prepare_groups_for_neutralization(grouped_news)
         print(f"ℹ️ Prepared {len(groups_prepared)} news groups for neutralization")
-        return
+        
         neutralized_count = neutralize_and_more(groups_prepared)
 
         print(f"Neutralized {neutralized_count} groups")
