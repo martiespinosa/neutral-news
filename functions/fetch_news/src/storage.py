@@ -46,7 +46,7 @@ def get_news_for_grouping():
     ungrouped_query = db.collection('news').where('group', '==', None)
     ungrouped_news = list(ungrouped_query.stream())
     
-    # 2. Get recent groups first (for the last 7 days instead of 36 hours)
+    # 2. Get recent groups first
     extended_time_threshold = datetime.now() - timedelta(days=1)
     
     # First, query to get all recent unique group IDs
@@ -66,10 +66,13 @@ def get_news_for_grouping():
 
     print(f"Found {len(unique_group_ids)} unique group IDs in the last 1 day")
     
-    # 3. Now fetch ALL news items belonging to these groups, regardless of age
+    # 3. Now fetch news items belonging to these groups from thbe last days
     reference_news = []
     for group_id in unique_group_ids:
-        group_news_query = db.collection('news').where('group', '==', group_id)
+        group_news_query = db.collection('news').where(
+            'created_at', '>=', extended_time_threshold
+        ).where(
+            'group', '==', group_id)
         group_news = list(group_news_query.stream())
         reference_news.extend(group_news)
     
