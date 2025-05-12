@@ -15,21 +15,63 @@ struct BiasScoreView: View {
     @State private var showInfo: Bool = false
     
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Rectangle()
-                    .fill(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(.rect(cornerRadius: dimensions))
-                
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: calculateWidth(totalWidth: geometry.size.width))
-                    .clipShape(.rect(cornerRadius: dimensions))
+        HStack {
+            Gauge(value: Double(biasScore), in: 0.0...Double(maxScore)) {
+                EmptyView()
             }
-            .frame(height: dimensions)
+            .tint(Color.accent.gradient)
+            
+            Button("Info", systemImage: "info.circle") {
+                showInfo.toggle()
+            }
+            .labelStyle(.iconOnly)
+            .popover(isPresented: $showInfo, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+                infoPopover
+            }
         }
-        .frame(height: dimensions)
+        
+//        HStack {
+//            Gauge(value: Double(biasScore), in: 0.0...Double(maxScore)) {
+//                EmptyView()
+//            }
+//            .tint(
+//                LinearGradient(
+//                    gradient: Gradient(colors: [.red, .green]),
+//                    startPoint: .leading,
+//                    endPoint: .trailing
+//                )
+//            )
+//            
+//            Button("Info", systemImage: "info.circle") {
+//                showInfo.toggle()
+//            }
+//            .labelStyle(.iconOnly)
+//            .popover(isPresented: $showInfo, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+//                infoPopover
+//            }
+//        }
+//        
+//        HStack {
+//            Gauge(value: Double(biasScore), in: 0.0...Double(maxScore)) {
+//                EmptyView()
+//            }
+//            .gaugeStyle(.accessoryLinear)
+//            .tint(
+//                LinearGradient(
+//                    gradient: Gradient(colors: [.red, .green]),
+//                    startPoint: .leading,
+//                    endPoint: .trailing
+//                )
+//            )
+//            
+//            Button("Info", systemImage: "info.circle") {
+//                showInfo.toggle()
+//            }
+//            .labelStyle(.iconOnly)
+//            .popover(isPresented: $showInfo, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+//                infoPopover
+//            }
+//        }
     }
     
     private var infoPopover : some View {
