@@ -117,7 +117,7 @@ def neutralize_and_more(news_groups, batch_size=5):
             
             if current_batch_to_update:
                 # Removed validation - directly process the batch
-                results = generate_neutral_analysis_batch(current_batch_to_update)
+                results = generate_neutral_analysis_batch(current_batch_to_update, is_update=True)
                 
                 if results is None:
                     print("⚠️ Stopping processing due to rate limit or quota exceeded.")
@@ -143,11 +143,19 @@ def neutralize_and_more(news_groups, batch_size=5):
             current_batch_to_neutralize = groups_to_neutralize[i:i+batch_size]
             
             if current_batch_to_neutralize:
-                # Removed validation - directly process the batch
-                results = generate_neutral_analysis_batch(current_batch_to_neutralize)
-                if results is None:
+                # Process the batch and get both results and group_dict
+                response = generate_neutral_analysis_batch(current_batch_to_neutralize, is_update=False)
+                
+                if response is None:
                     print("⚠️ Stopping processing due to rate limit or quota exceeded.")
                     break
+                
+                # Unpack the response - now it returns both results and group_dict
+                if isinstance(response, tuple) and len(response) == 2:
+                    results, sources_to_unassign = response
+                else:
+                    results = response
+                    sources_to_unassign = {}
                 
                 for result, group_info in zip(results, current_batch_to_neutralize):
                     if not result:
@@ -157,9 +165,25 @@ def neutralize_and_more(news_groups, batch_size=5):
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
+                    # Store the neutral news
                     if (store_neutral_news(group, result, source_ids)):
                         neutralized_groups.append(group)
                         neutralized_count += 1
+                        
+                        # Now unassign any sources that need to be removed from this group
+                        group_str = str(group)
+                        if group_str in sources_to_unassign:
+                            db = initialize_firebase()
+                            for source_id in sources_to_unassign[group_str]:
+                                try:
+                                    # Now that the neutral_news document exists, we can safely update it
+                                    neutral_doc_ref = db.collection('neutral_news').document(group_str)
+                                    neutral_doc_ref.update({
+                                        'source_ids': firestore.ArrayRemove([source_id])
+                                    })
+                                    print(f"  Successfully unassigned source {source_id} from newly created group {group}")
+                                except Exception as e:
+                                    print(f"  Failed to unassign source {source_id} from newly created group {group}: {str(e)}")
                 
                     updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
                     
@@ -174,7 +198,7 @@ def neutralize_and_more(news_groups, batch_size=5):
         traceback.print_exc()
         return 0
     
-def generate_neutral_analysis_batch(group_batch):
+def generate_neutral_analysis_batch(group_batch, is_update):
     """
     Genera análisis neutros para un batch de grupos de noticias usando la API de OpenAI.
     Handles token limits intelligently, only truncating when necessary.
@@ -182,6 +206,9 @@ def generate_neutral_analysis_batch(group_batch):
     if not group_batch:
         return []
         
+    if not is_update:
+        # Create a base dictionary that will store group IDs that have not yet been created in the firestore database, and their source IDs that we want to unassign from the group
+        group_dict = {}
     results = []
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -190,10 +217,6 @@ def generate_neutral_analysis_batch(group_batch):
         
     api_key = api_key.strip()
     client = OpenAI(api_key=api_key)
-    
-    # Approximate tokens per character (for estimation)
-    TOKEN_RATIO = 0.25  # ~4 characters per token
-    MAX_TOKENS = 125000  # Safe limit below the 128K maximum
     
     system_message = """
     Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
@@ -231,10 +254,9 @@ def generate_neutral_analysis_batch(group_batch):
     """
     
     SOURCES_LIMIT = 16  # Maximum number of sources to process
-    system_token_estimate = len(system_message) * TOKEN_RATIO
     
     try:
-        # Process each group individually for better token control
+        # Process each group individually for better source control
         for group_info in group_batch:
             group_id = group_info.get('group', 'unknown')
             sources = group_info.get('sources', [])
@@ -291,26 +313,32 @@ def generate_neutral_analysis_batch(group_batch):
                                     'group': None,
                                     'updated_at': None
                                 })
-                                # Also unassign the group from the neutral news document
-                                # First, get the neutral news document
-                                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                                # Then update its field "source_ids" to remove the source_id
-                                neutral_doc_ref.update({
-                                    'source_ids': firestore.ArrayRemove([source_id])
-                                })
+                                # También desasignar el grupo del documento de noticias neutrales
+                                # Luego actualiza su campo "source_ids" para eliminar el source_id
+                                if is_update:
+                                    neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                                    neutral_doc_ref.update({
+                                        'source_ids': firestore.ArrayRemove([source_id])
+                                    })
+                                # Si no es una actualizacion, el grupo no existe, por lo que no se puede eliminar el source_id
+                                # Guardamos el source_id en el diccionario de grupo-source_ids, para eliminarlo después
+                                else:
+                                    # Agregar el source_id al diccionario de grupo-source_ids
+                                    if str(group_id) not in group_dict:
+                                        group_dict[str(group_id)] = []
+                                    group_dict[str(group_id)].append(source_id)
                                 print(f"  Updated news item {source_id} from {source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to update news item {source_id}: {str(e)}")
                 
-                # Replace valid_sources with the deduplicated list
+                # Reemplazar valid_sources con la lista desduplicada
                 valid_sources = list(sources_by_medium.values())
                 print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources")
                 
-                # If we still have too many sources, apply the original limit
+                # Aplicar el límite de fuentes después de la desduplicación
                 if len(valid_sources) > SOURCES_LIMIT:
-                    valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
                     valid_sources = valid_sources[:SOURCES_LIMIT]
-                    print(f"ℹ️ Further limiting to {SOURCES_LIMIT} sources due to token constraints")
+                    print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources")
                     
                 if len(valid_sources) < 2:
                     results.append(None)
@@ -327,13 +355,17 @@ def generate_neutral_analysis_batch(group_batch):
                                     'group': None,
                                     'updated_at': None
                                 })
-                                # Also unassign the group from the neutral news document
-                                # First, get the neutral news document
-                                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                                # Then update its field "source_ids" to remove the source_id
-                                neutral_doc_ref.update({
-                                    'source_ids': firestore.ArrayRemove([source_id])
-                                })
+                                # También desasignar el grupo del documento de noticias neutrales
+                                if is_update:
+                                    neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                                    neutral_doc_ref.update({
+                                        'source_ids': firestore.ArrayRemove([source_id])
+                                    })
+                                else:
+                                    # Agregar el source_id al diccionario de grupo-source_ids
+                                    if str(group_id) not in group_dict:
+                                        group_dict[str(group_id)] = []
+                                    group_dict[str(group_id)].append(source_id)
                                 print(f"  Unassigned group from the only remaining source {source_id} from {remaining_source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to unassign group from source {source_id}: {str(e)}")
@@ -343,7 +375,7 @@ def generate_neutral_analysis_batch(group_batch):
             # Calculate average description length for this group
             avg_desc_length = sum(len(s['scraped_description']) for s in valid_sources) / len(valid_sources)
             
-            # First, identify and handle outliers (sources with extremely long descriptions)
+            # Handle outliers (sources with extremely long descriptions)
             for source in valid_sources:
                 desc_len = len(source['scraped_description'])
                 # If a source is 3x longer than average, truncate it to a reasonable length
@@ -351,80 +383,13 @@ def generate_neutral_analysis_batch(group_batch):
                     truncated_length = int(max(avg_desc_length * 2, 10000))
                     source['scraped_description'] = source['scraped_description'][:truncated_length] + "... [truncated due to excessive length]"
             
-            # Try to include as many sources as possible within token limits
+            # Prepare sources text for API call without token limit concerns
             sources_text = ""
-            total_token_estimate = system_token_estimate
-            base_message_length = len("Analiza las siguientes fuentes de noticias:\n\n") * TOKEN_RATIO
-            total_token_estimate += base_message_length
-            
-            # Start with regular processing of sources
             for i, source in enumerate(valid_sources):
                 source_text = f"Fuente {i+1}: {source['source_medium']}\n"
                 source_text += f"Titular: {source['title']}\n"
                 source_text += f"Descripción: {source['scraped_description']}\n\n"
-                
-                source_token_estimate = len(source_text) * TOKEN_RATIO
-                
-                # If this source would push us over the limit, we need to truncate or stop
-                if total_token_estimate + source_token_estimate > MAX_TOKENS:
-                    # If we already have at least 2 sources, stop adding more
-                    if i >= 2:
-                        print(f"⚠️ Stopping at {i} sources for group {group_id} due to token limit")
-                        break
-                        
-                    # Otherwise we need this source but must truncate it
-                    remaining_tokens = MAX_TOKENS - total_token_estimate
-                    remaining_chars = int(remaining_tokens / TOKEN_RATIO)
-                    
-                    if remaining_chars > 500:  # If we can include at least some meaningful content
-                        truncated_text = source_text[:remaining_chars]
-                        truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated due to token limit]\n\n"
-                        sources_text += truncated_text
-                        print(f"⚠️ Truncated source {i+1} for group {group_id} due to token limit")
-                    break
-                else:
-                    sources_text += source_text
-                    total_token_estimate += source_token_estimate
-            
-            # If we couldn't add enough sources with regular processing, try shorter versions
-            if len(sources_text.strip()) == 0 or sources_text.count("Fuente ") < 2:
-                print(f"⚠️ Using shorter descriptions for group {group_id} due to token limit")
-                # Sort by shortest descriptions first
-                valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
-                
-                sources_text = ""
-                total_token_estimate = system_token_estimate + base_message_length
-                
-                for i, source in enumerate(valid_sources):
-                    source_text = f"Fuente {i+1}: {source['source_medium']}\n"
-                    source_text += f"Titular: {source['title']}\n"
-                    
-                    # Use more aggressive truncation for descriptions
-                    desc = source['scraped_description']
-                    if len(desc) > 5000:
-                        desc = desc[:5000] + "... [truncated]"
-                    
-                    source_text += f"Descripción: {desc}\n\n"
-                    source_token_estimate = len(source_text) * TOKEN_RATIO
-                    
-                    if total_token_estimate + source_token_estimate < MAX_TOKENS:
-                        sources_text += source_text
-                        total_token_estimate += source_token_estimate
-                        
-                        # If we have at least 2 sources and are running out of space, stop
-                        if i >= 1 and total_token_estimate > (MAX_TOKENS * 0.9):
-                            break
-                    else:
-                        # If we don't have 2 sources yet, we must include at least a truncated version
-                        if i < 2:
-                            remaining_tokens = MAX_TOKENS - total_token_estimate
-                            remaining_chars = int(remaining_tokens / TOKEN_RATIO)
-                            
-                            if remaining_chars > 500:
-                                truncated_text = source_text[:remaining_chars]
-                                truncated_text = truncated_text.rsplit('\n', 1)[0] + "\n... [truncated]\n\n"
-                                sources_text += truncated_text
-                        break
+                sources_text += source_text
             
             user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
             
@@ -499,10 +464,15 @@ def generate_neutral_analysis_batch(group_batch):
             if retry_count < max_retries or result is not None:
                 results.append(result)
                 
+        # Return both results and the group_dict if we're not updating
+        if not is_update:
+            return results, group_dict
         return results
         
     except Exception as e:
         print(f"Error in generate_neutral_analysis_batch: {str(e)}")
         import traceback
         traceback.print_exc()
+        if not is_update:
+            return [None] * len(group_batch), {}
         return [None] * len(group_batch)
