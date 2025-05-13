@@ -110,7 +110,7 @@ def neutralize_and_more(news_groups, batch_size=5):
         
         print(f"ℹ️ Updating neutralization of {len(groups_to_update)} groups")
         db = initialize_firebase()
-        
+        return 0
         for i in range(0, len(groups_to_update), batch_size):
             current_batch_to_update = groups_to_update[i:i+batch_size]
             
