@@ -165,26 +165,11 @@ def neutralize_and_more(news_groups, batch_size=5):
                     sources = group_info['sources']
                     source_ids = group_info['source_ids']
                     
-                    # Store the neutral news
-                    if (store_neutral_news(group, result, source_ids)):
+                    # Store the neutral news - pass sources_to_unassign parameter
+                    if (store_neutral_news(group, result, source_ids, sources_to_unassign)):
                         neutralized_groups.append(group)
                         neutralized_count += 1
-                        
-                        # Now unassign any sources that need to be removed from this group
-                        group_str = str(group)
-                        if group_str in sources_to_unassign:
-                            db = initialize_firebase()
-                            for source_id in sources_to_unassign[group_str]:
-                                try:
-                                    # Now that the neutral_news document exists, we can safely update it
-                                    neutral_doc_ref = db.collection('neutral_news').document(group_str)
-                                    neutral_doc_ref.update({
-                                        'source_ids': firestore.ArrayRemove([source_id])
-                                    })
-                                    print(f"  Successfully unassigned source {source_id} from newly created group {group}")
-                                except Exception as e:
-                                    print(f"  Failed to unassign source {source_id} from newly created group {group}: {str(e)}")
-                
+                    
                     updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
                     
         print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, updated {updated_neutral_scores_count} regular news with neutral scores")

@@ -290,15 +290,30 @@ def load_all_news_links_from_medium(medium):
     
     return news_links
 
-def store_neutral_news(group, neutralization_result, source_ids):
+def store_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None):
     """
     Almacena el resultado de la neutralización en la colección neutral_news.
+    También gestiona la eliminación de fuentes que necesitan ser desasignadas del grupo.
+    
+    Args:
+        group: ID del grupo
+        neutralization_result: Resultado de la neutralización
+        source_ids: IDs de las fuentes
+        sources_to_unassign: Diccionario con IDs de fuentes a desasignar del grupo
     """
     try:
         db = initialize_firebase()
 
         if group is not None:
             group = int(float(group))
+
+        # Procesar las fuentes a desasignar primero
+        group_str = str(group)
+        if sources_to_unassign and group_str in sources_to_unassign:
+            for source_id in sources_to_unassign[group_str]:
+                if source_id in source_ids:
+                    source_ids.remove(source_id)
+                    print(f"  Removed source {source_id} from sources list for group {group}")
 
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
 
