@@ -6,6 +6,10 @@ def store_news_in_firestore(news_list):
     """
     Store news items in Firestore database
     """
+    if not news_list:
+        print("No news to store")
+        return 0
+    
     db = initialize_firebase()
     batch = db.batch()
     news_count = 0
@@ -36,25 +40,21 @@ def store_news_in_firestore(news_list):
     print(f"Saved {news_count} new news to Firestore")
     return news_count
 
-def get_news_for_grouping(fetch_all_news=False) -> tuple:
+def get_news_for_grouping() -> tuple:
     """
     Get news items for grouping process with improved reference selection
-    
-    Args:
-        fetch_all_news: If True, include all news documents in news_docs, not just ungrouped and reference news.
-                        Warning: This may significantly increase memory usage if you have many news items.
-    
+
     Returns:
         tuple: (news_for_grouping, news_docs) - List of news items for grouping and dictionary of news documents
     """
     db = initialize_firebase()
-    
-    UNGROUPED_NEWS_DAYS = 1 # Number of days to look back for ungrouped news
-    RECENT_GROUPS_DAYS = 2 # Number of days to look back for recent groups
-    REFERENCE_NEWS_DAYS = 3 # Number of days to look back for reference news
+
+    UNGROUPED_NEWS_HOURS = 1 # Number of hours to look back for ungrouped news
+    RECENT_GROUPS_HOURS = 1 # Number of hours to look back for recent groups
+    REFERENCE_NEWS_HOURS = 1 # Number of hours to look back for reference news
 
     # Get recent unique group IDs
-    recent_groups_time_threshold = datetime.now() - timedelta(days=RECENT_GROUPS_DAYS)
+    recent_groups_time_threshold = datetime.now() - timedelta(hours=RECENT_GROUPS_HOURS)
     recent_groups = db.collection('neutral_news').where(
         'created_at', '>=', recent_groups_time_threshold
     )
@@ -65,17 +65,17 @@ def get_news_for_grouping(fetch_all_news=False) -> tuple:
         data = doc.to_dict()
         if 'group' in data and data['group'] is not None:
             recent_groups_ids.add(data['group'])
-    print(f"Found {len(recent_groups_ids)} unique group IDs in the last {RECENT_GROUPS_DAYS} days")
-    
+    print(f"Found {len(recent_groups_ids)} unique group IDs in the last {RECENT_GROUPS_HOURS} hours")
+
     # OPTIMIZED: Make a single query to get all news from the time period
-    reference_groups_time_threshold = datetime.now() - timedelta(days=REFERENCE_NEWS_DAYS)
+    reference_groups_time_threshold = datetime.now() - timedelta(hours=REFERENCE_NEWS_HOURS)
     all_news_query = db.collection('news').where(
         'created_at', '>=', reference_groups_time_threshold
     )
     
     all_news = list(all_news_query.stream())
-    print(f"Fetched {len(all_news)} total news items from the last {REFERENCE_NEWS_DAYS} days")
-    
+    print(f"Fetched {len(all_news)} total news items from the last {REFERENCE_NEWS_HOURS} hours")
+
     # Filter news items programmatically
     ungrouped_news = []
     reference_news = []
@@ -88,20 +88,11 @@ def get_news_for_grouping(fetch_all_news=False) -> tuple:
             ungrouped_news.append(doc)
         elif group in recent_groups_ids:
             reference_news.append(doc)
-    
-    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_DAYS} days")
+
+    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_HOURS} hours")
     print(f"Found {len(reference_news)} reference news items from {len(recent_groups_ids)} groups")
 
-    # Prepare dictionary for all documents
-    if fetch_all_news:
-        # Get ALL news documents from Firestore
-        print("⚠️ Fetching ALL news documents. This may use significant memory.")
-        all_news_docs = list(db.collection('news').stream())
-        news_docs = {doc.id: doc for doc in all_news_docs}
-        print(f"Loaded {len(news_docs)} total news documents")
-    else:
-        # Just use the documents we already fetched (more memory efficient)
-        news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
+    news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
     
     # Convert documents to processing format
     news_for_grouping = []
@@ -197,12 +188,14 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     
     return updated_count, created_count, updated_groups, created_groups
 
-def update_news_in_firestore(groups_prepared: list) -> tuple:
+def update_news_in_firestore(news_docs: dict, updated_groups: set, created_groups: set) -> tuple:
     """
-    Update news documents in Firestore based on group changes using groups_prepared.
+    Update news documents in Firestore based on group changes.
     
     Args:
-        groups_prepared: List of prepared groups with their sources
+        news_docs: Dictionary of news documents keyed by ID
+        updated_groups: Set of group IDs that were updated
+        created_groups: Set of group IDs that were newly created
         
     Returns:
         tuple: (updated_news_count, created_news_count, updated_news) - Numbers and list of updated news document IDs
@@ -214,42 +207,33 @@ def update_news_in_firestore(groups_prepared: list) -> tuple:
     current_batch = 0
     updated_news = []
 
-    for group in groups_prepared:
-        group_id = group.get("group")
-        sources = group.get("sources", [])
+    # Process all news docs to update them with their respective groups
+    for doc_id, doc in news_docs.items():
+        doc_data = doc.to_dict()
+        doc_ref = doc.reference
+        current_group_id = doc_data.get("group")
+        
+        # Check if this document's group is in either updated or created groups
+        if current_group_id in updated_groups:
+            batch.update(doc_ref, {
+                "updated_at": datetime.now()
+            })
+            updated_news.append(doc_id)
+            updated_news_count += 1
+            current_batch += 1
+        elif current_group_id in created_groups:
+            batch.update(doc_ref, {
+                "updated_at": datetime.now()
+            })
+            updated_news.append(doc_id)
+            created_news_count += 1
+            current_batch += 1
 
-        for source in sources:
-            doc_id = source.get("id")
-            if not doc_id:
-                continue
-
-            # Fetch the document reference
-            doc_ref = db.collection('news').document(doc_id)
-            doc = doc_ref.get()
-            if not doc.exists:
-                continue
-
-            doc_data = doc.to_dict()
-            current_group_id = doc_data.get("group")
-
-            # Update the document's group if it has changed
-            if current_group_id != group_id:
-                batch.update(doc_ref, {
-                    "group": group_id,
-                    "updated_at": datetime.now()
-                })
-                updated_news.append(doc_id)
-                if current_group_id is None:
-                    created_news_count += 1
-                else:
-                    updated_news_count += 1
-                current_batch += 1
-
-            # Handle batch size limit
-            if current_batch >= 450:
-                batch.commit()
-                batch = db.batch()
-                current_batch = 0
+        # Handle batch size limit
+        if current_batch >= 450:
+            batch.commit()
+            batch = db.batch()
+            current_batch = 0
 
     # Final batch commit if there are pending operations
     if current_batch > 0:

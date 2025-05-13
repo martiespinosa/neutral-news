@@ -5,9 +5,7 @@ import os
 
 # Ruta al archivo JSON de tu cuenta de servicio - Relative path from script location
 SERVICE_ACCOUNT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../neutralnews-ca548-firebase-adminsdk-fbsvc-b2a2b9fa03.json'))
-
-# Configurable number of days ago to delete documents
-DAYS_AGO = 2
+DAYS_AGO = 14
 
 def main():
     print("Connecting to Firebase...")
@@ -43,12 +41,11 @@ def main():
     print("Updating groups associated with deleted source_ids...")
     group_update_count = 0
 
-    for source_id in deleted_source_ids:
-        group_docs = db.collection('news').where('group', '==', source_id).stream()
-        for group_doc in group_docs:
-            print(f"🔄 Updating news document {group_doc.id}, setting group to None (was {source_id}).")
-            group_doc.reference.update({'group': None})
-            group_update_count += 1
+    group_docs = db.collection('news').where('group', '!=', None).stream()
+    for group_doc in group_docs:
+        print(f"🔄 Updating news document {group_doc.id}).")
+        group_doc.reference.update({'group': None})
+        group_update_count += 1
 
     print(f"\n✅ Finished. Updated {group_update_count} news documents to set group to None.")
 

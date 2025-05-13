@@ -6,10 +6,10 @@ from src.storage import update_groups_in_firestore
 from src.storage import update_news_in_firestore
 from src.neutralization import neutralize_and_more
 
-def process_news_groups(fetch_all_news=False):
+def process_news_groups():
     try:
         # Get news for grouping with the option to fetch all news documents
-        news_for_grouping, news_docs = get_news_for_grouping(fetch_all_news=fetch_all_news)
+        news_for_grouping, news_docs = get_news_for_grouping()
         
         if not news_for_grouping:
             print("No news to group")
