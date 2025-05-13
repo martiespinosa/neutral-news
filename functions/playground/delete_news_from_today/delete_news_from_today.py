@@ -31,7 +31,7 @@ def main():
         doc_id = doc.id
 
         # Check if the document was created before the cutoff date
-        if created_at and created_at < cutoff_date:
+        if created_at and created_at > cutoff_date:
             print(f"🗑️ Deleting neutral_news document {doc_id} created at {created_at} with sources: {source_ids}")
             deleted_source_ids.extend(source_ids)  # Save the source_ids
             doc.reference.delete()
