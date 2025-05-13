@@ -278,7 +278,7 @@ def assign_group_ids(df, has_reference_news):
     Assign final group IDs based on DBSCAN clusters and reference groups
     """
     # Define large groups that need update reduction
-    large_groups = [1, 2]
+    large_groups = [3, 6]
     
     # Set a time threshold for large groups (e.g., 24 hours)
     time_threshold = datetime.now() - timedelta(hours=24)
