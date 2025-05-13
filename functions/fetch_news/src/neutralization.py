@@ -229,7 +229,7 @@ def generate_neutral_analysis_batch(group_batch):
     }
     """
     
-    SOURCES_LIMIT = 5  # Maximum number of sources to process
+    SOURCES_LIMIT = 16  # Maximum number of sources to process
     system_token_estimate = len(system_message) * TOKEN_RATIO
     
     try:
@@ -249,11 +249,38 @@ def generate_neutral_analysis_batch(group_batch):
                 print(f"⚠️ Not enough valid sources for group {group_id}. Skipping.")
                 continue
             
-            # Limit to maximum 5 sources per group, sort by description length (shortest first)
-            if len(valid_sources) > SOURCES_LIMIT:
-                valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
-                valid_sources = valid_sources[:SOURCES_LIMIT]
-                print(f"ℹ️ Limiting group {group_id} to {SOURCES_LIMIT} sources (from {len(sources)} original sources)")
+            # Select only one source per press medium (the most recently published)
+            if len(valid_sources) > 0:
+                sources_by_medium = {}
+                for source in valid_sources:
+                    medium = source.get('source_medium')
+                    
+                    # Check for date fields (try different possible field names)
+                    published_date = source.get('published_at') or source.get('created_at') or source.get('date')
+                    
+                    if medium:
+                        # If this medium isn't in our dict yet or if this source is more recent
+                        if medium not in sources_by_medium or (
+                            published_date and 
+                            (not sources_by_medium[medium].get('published_at') or 
+                             published_date > sources_by_medium[medium].get('published_at'))
+                        ):
+                            sources_by_medium[medium] = source
+                
+                # Replace valid_sources with the deduplicated list
+                valid_sources = list(sources_by_medium.values())
+                print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources")
+                
+                # If we still have too many sources, apply the original limit
+                if len(valid_sources) > SOURCES_LIMIT:
+                    valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
+                    valid_sources = valid_sources[:SOURCES_LIMIT]
+                    print(f"ℹ️ Further limiting to {SOURCES_LIMIT} sources due to token constraints")
+                    
+                if len(valid_sources) < 2:
+                    results.append(None)
+                    print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
+                    continue
 
             # Calculate average description length for this group
             avg_desc_length = sum(len(s['scraped_description']) for s in valid_sources) / len(valid_sources)

@@ -49,7 +49,6 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    UNGROUPED_NEWS_HOURS = 1 # Number of hours to look back for ungrouped news
     RECENT_GROUPS_HOURS = 1 # Number of hours to look back for recent groups
     REFERENCE_NEWS_HOURS = 1 # Number of hours to look back for reference news
 
@@ -89,7 +88,7 @@ def get_news_for_grouping() -> tuple:
         elif group in recent_groups_ids:
             reference_news.append(doc)
 
-    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_HOURS} hours")
+    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {REFERENCE_NEWS_HOURS} hours")
     print(f"Found {len(reference_news)} reference news items from {len(recent_groups_ids)} groups")
 
     news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
@@ -159,8 +158,7 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
                 # Only update if the group changed
                 if current_group != group_id:
                     batch.update(doc_ref, {
-                        "group": group_id,
-                        "updated_at": datetime.now()
+                        "group": group_id
                         })
                     # Only add to either updated_groups OR created_groups, not both
                     if current_group is None:
@@ -261,7 +259,7 @@ def update_news_with_neutral_scores(sources, neutralization_result):
                     news_id = source.get("id")
                     if news_id:
                         news_ref = db.collection('news').document(news_id)
-                        batch.update(news_ref, {"neutral_score": neutral_score})
+                        batch.update(news_ref, {"neutral_score": neutral_score, "updated_at": datetime.now()})
                         updated_count += 1
         
         # Commit the batch

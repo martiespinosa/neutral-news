@@ -25,10 +25,6 @@ def process_news_groups():
         print(f"Updated {updated_count} groups and created {created_count} new groups in Firestore")
         print(f"Updated groups: {updated_groups}")
         print(f"Created groups: {created_groups}")
-        # Update news in Firestore
-        updated_news_count, created_news_count, updated_news = update_news_in_firestore(news_docs, updated_groups, created_groups)
-        print(f"Updated {updated_news_count} news documents and created {created_news_count} new news documents in Firestore")
-        print(f"Updated news documents: {updated_news}")
         
         # Neutralizar los grupos recién creados y guardarlos
         neutralized_count = neutralize_and_more(groups_prepared)

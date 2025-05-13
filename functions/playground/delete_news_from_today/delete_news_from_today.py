@@ -15,6 +15,7 @@ def main():
 
     # Calculate the cutoff date
     cutoff_date = datetime.now() - timedelta(days=DAYS_AGO)
+    print(f"Cutoff date: {cutoff_date} (timezone-naive)")
 
     # Delete neutral_news documents created before the cutoff date
     print(f"Fetching neutral_news documents created before {cutoff_date}...")
@@ -28,12 +29,27 @@ def main():
         source_ids = data.get('source_ids', [])
         doc_id = doc.id
 
-        # Check if the document was created before the cutoff date
-        if created_at and created_at > cutoff_date:
-            print(f"🗑️ Deleting neutral_news document {doc_id} created at {created_at} with sources: {source_ids}")
-            deleted_source_ids.extend(source_ids)  # Save the source_ids
-            doc.reference.delete()
-            neutral_news_count += 1
+        # Handle the datetime comparison properly
+        if created_at:
+            # Convert Firestore timestamp to Python datetime if needed
+            if hasattr(created_at, 'timestamp'):
+                created_at_datetime = created_at.timestamp()
+                created_at_datetime = datetime.fromtimestamp(created_at_datetime)
+            else:
+                created_at_datetime = created_at
+            
+            # Make created_at timezone-naive by replacing it with its value without timezone info
+            if hasattr(created_at_datetime, 'tzinfo') and created_at_datetime.tzinfo is not None:
+                created_at_datetime = created_at_datetime.replace(tzinfo=None)
+            
+            # Now compare the timezone-naive datetimes
+            if created_at_datetime < cutoff_date:
+                print(f"🗑️ Deleting neutral_news document {doc_id} created at {created_at_datetime} with sources: {source_ids}")
+                deleted_source_ids.extend(source_ids)  # Save the source_ids
+                doc.reference.delete()
+                neutral_news_count += 1
+            else:
+                print(f"Keeping document {doc_id} created at {created_at_datetime} (newer than cutoff)")
 
     print(f"\n✅ Finished. Deleted {neutral_news_count} neutral_news documents created before {cutoff_date}.")
 
@@ -43,11 +59,11 @@ def main():
 
     group_docs = db.collection('news').where('group', '!=', None).stream()
     for group_doc in group_docs:
-        print(f"🔄 Updating news document {group_doc.id}).")
+        print(f"🔄 Updating news document {group_doc.id}.")
         group_doc.reference.update({'group': None})
         group_update_count += 1
 
-    print(f"\n✅ Finished. Updated {group_update_count} news documents to set group to None.")
+    print(f"\n✅ Finished. Updated {group_update_count} news documents to set neutral_score to None.")
 
 if __name__ == '__main__':
     main()
