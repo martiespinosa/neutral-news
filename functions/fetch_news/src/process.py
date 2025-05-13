@@ -5,6 +5,7 @@ from src.storage import get_news_for_grouping
 from src.storage import update_groups_in_firestore
 from src.storage import update_news_in_firestore
 from src.neutralization import neutralize_and_more
+from src.config import initialize_firebase
 
 def process_news_groups():
     try:
@@ -46,7 +47,7 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
     # Track which groups are existing vs new
     existing_groups = set()
     
-    # Process each news item
+    # Process each news item from current batch
     for noticia in grouped_news:
         grupo = noticia.get("group")
         if grupo is not None:
@@ -70,6 +71,8 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
                     "title": title,
                     "scraped_description": description,
                     "source_medium": noticia.get("source_medium"),
+                    "pub_date": noticia.get("pub_date"),
+                    "created_at": noticia.get("created_at"),
                 })
             else:
                 # Try fallback
@@ -83,7 +86,65 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
                         "title": title,
                         "scraped_description": fallback_description,
                         "source_medium": noticia.get("source_medium"),
+                        "pub_date": noticia.get("pub_date"),
+                        "created_at": noticia.get("created_at"),
                     })
+    
+    # Fetch all additional sources from the database for each group
+    db = initialize_firebase()
+    all_group_ids = list(grupos.keys())
+    processed_ids = {source["id"] for group_sources in grupos.values() for source in group_sources}
+    
+    # Only query database if we have groups
+    if all_group_ids:
+        print(f"Fetching all existing sources for {len(all_group_ids)} groups from the database...")
+        
+        # Get all news with groups that match our current groups
+        for group_id in all_group_ids:
+            query = db.collection('news').where('group', '==', group_id).stream()
+            
+            for doc in query:
+                doc_id = doc.id
+                # Skip if we already processed this document in the current batch
+                if doc_id in processed_ids:
+                    continue
+                    
+                data = doc.to_dict()
+                title = data.get("title", "")
+                description = data.get("scraped_description", "")
+                
+                # Check if this source has valid content
+                if not (title and title.strip()):
+                    continue
+                    
+                if description and description.strip():
+                    # Valid with primary description
+                    valid_sources_no_fallback[group_id] += 1
+                    valid_sources_with_fallback[group_id] += 1
+                    
+                    grupos[group_id].append({
+                        "id": doc_id,
+                        "title": title,
+                        "scraped_description": description,
+                        "source_medium": data.get("source_medium"),
+                        "pub_date": data.get("pub_date"),
+                        "created_at": data.get("created_at"),
+                    })
+                else:
+                    # Try fallback
+                    fallback_description = data.get("description", "")
+                    if fallback_description and fallback_description.strip():
+                        groups_using_fallback.add(group_id)
+                        valid_sources_with_fallback[group_id] += 1
+                        
+                        grupos[group_id].append({
+                            "id": doc_id,
+                            "title": title,
+                            "scraped_description": fallback_description,
+                            "source_medium": data.get("source_medium"),
+                            "pub_date": data.get("pub_date"),
+                            "created_at": data.get("created_at"),
+                        })
     
     # Identify which groups were saved by fallback
     groups_saved_by_fallback = []

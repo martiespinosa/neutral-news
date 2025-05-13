@@ -258,13 +258,13 @@ def generate_neutral_analysis_batch(group_batch):
                     medium = source.get('source_medium')
                     
                     # Check for date fields (try different possible field names)
-                    published_date = source.get('pub_date') or source.get('created_at') or source.get('date')
+                    published_date = source.get('pub_date') or source.get('created_at')
                     
                     if medium:
                         # If we already have a source for this medium
                         if medium in sources_by_medium:
                             existing_source = sources_by_medium[medium]
-                            existing_date = existing_source.get('pub_date') or existing_source.get('created_at') or existing_source.get('date')
+                            existing_date = existing_source.get('pub_date') or existing_source.get('created_at')
                             
                             # Compare dates to keep the most recent one
                             if published_date and existing_date and published_date > existing_date:
@@ -307,7 +307,22 @@ def generate_neutral_analysis_batch(group_batch):
                 if len(valid_sources) < 2:
                     results.append(None)
                     print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
-
+                    
+                    # Unassign the group from any remaining source
+                    if len(valid_sources) == 1:
+                        remaining_source = valid_sources[0]
+                        source_id = remaining_source.get('id')
+                        if source_id:
+                            try:
+                                db = initialize_firebase()
+                                db.collection('news').document(source_id).update({
+                                    'group': None,
+                                    'updated_at': None
+                                })
+                                print(f"  Unassigned group from the only remaining source {source_id} from {remaining_source.get('source_medium')}")
+                            except Exception as e:
+                                print(f"  Failed to unassign group from source {source_id}: {str(e)}")
+                    
                     continue
 
             # Calculate average description length for this group
