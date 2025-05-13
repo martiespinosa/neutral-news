@@ -23,4 +23,4 @@ if ($LASTEXITCODE -ne 0) {
     Write-Error "Cloud Run deployment failed."
     exit $LASTEXITCODE
 }
-Write-Host "Cloud Run deployment successful."
+Write-Host "Cloud Run deployment successful at time $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"

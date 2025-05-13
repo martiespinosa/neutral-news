@@ -3,6 +3,7 @@ import os, json
 
 from src.storage import store_neutral_news, update_news_with_neutral_scores, update_existing_neutral_news
 from .config import initialize_firebase
+from google.cloud import firestore
 
 def neutralize_and_more(news_groups, batch_size=5):
     """
@@ -290,7 +291,14 @@ def generate_neutral_analysis_batch(group_batch):
                                     'group': None,
                                     'updated_at': None
                                 })
-                                print(f"  Updated news item {source_id} from {source.get('source_medium')}")
+                                # Also unassign the group from the neutral news document
+                                # First, get the neutral news document
+                                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                                # Then update its field "source_ids" to remove the source_id
+                                neutral_doc_ref.update({
+                                    'source_ids': firestore.ArrayRemove([source_id])
+                                })
+                                print(f"  Updated news item {source_id} from {source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to update news item {source_id}: {str(e)}")
                 
@@ -319,7 +327,14 @@ def generate_neutral_analysis_batch(group_batch):
                                     'group': None,
                                     'updated_at': None
                                 })
-                                print(f"  Unassigned group from the only remaining source {source_id} from {remaining_source.get('source_medium')}")
+                                # Also unassign the group from the neutral news document
+                                # First, get the neutral news document
+                                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                                # Then update its field "source_ids" to remove the source_id
+                                neutral_doc_ref.update({
+                                    'source_ids': firestore.ArrayRemove([source_id])
+                                })
+                                print(f"  Unassigned group from the only remaining source {source_id} from {remaining_source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to unassign group from source {source_id}: {str(e)}")
                     
