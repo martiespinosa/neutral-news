@@ -36,9 +36,16 @@ def store_news_in_firestore(news_list):
     print(f"Saved {news_count} new news to Firestore")
     return news_count
 
-def get_news_for_grouping() -> tuple:
+def get_news_for_grouping(fetch_all_news=False) -> tuple:
     """
     Get news items for grouping process with improved reference selection
+    
+    Args:
+        fetch_all_news: If True, include all news documents in news_docs, not just ungrouped and reference news.
+                        Warning: This may significantly increase memory usage if you have many news items.
+    
+    Returns:
+        tuple: (news_for_grouping, news_docs) - List of news items for grouping and dictionary of news documents
     """
     db = initialize_firebase()
     
@@ -46,15 +53,7 @@ def get_news_for_grouping() -> tuple:
     RECENT_GROUPS_DAYS = 2 # Number of days to look back for recent groups
     REFERENCE_NEWS_DAYS = 3 # Number of days to look back for reference news
 
-    # 1. Get ungrouped news (same as before)
-    ungrouped_time_threshold = datetime.now() - timedelta(days=UNGROUPED_NEWS_DAYS)
-    ungrouped_query = db.collection('news').where(
-            'created_at', '>=', ungrouped_time_threshold
-        ).where('group', '==', None)
-    ungrouped_news = list(ungrouped_query.stream())
-    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_DAYS} days")
-    
-    # 2. Get recent unique group IDs
+    # Get recent unique group IDs
     recent_groups_time_threshold = datetime.now() - timedelta(days=RECENT_GROUPS_DAYS)
     recent_groups = db.collection('neutral_news').where(
         'created_at', '>=', recent_groups_time_threshold
@@ -68,29 +67,47 @@ def get_news_for_grouping() -> tuple:
             recent_groups_ids.add(data['group'])
     print(f"Found {len(recent_groups_ids)} unique group IDs in the last {RECENT_GROUPS_DAYS} days")
     
-    # 3. Now fetch news items belonging to these groups from the last days
+    # OPTIMIZED: Make a single query to get all news from the time period
     reference_groups_time_threshold = datetime.now() - timedelta(days=REFERENCE_NEWS_DAYS)
+    all_news_query = db.collection('news').where(
+        'created_at', '>=', reference_groups_time_threshold
+    )
+    
+    all_news = list(all_news_query.stream())
+    print(f"Fetched {len(all_news)} total news items from the last {REFERENCE_NEWS_DAYS} days")
+    
+    # Filter news items programmatically
+    ungrouped_news = []
     reference_news = []
-    for group_id in recent_groups_ids:
-        group_news_query = db.collection('news').where(
-            'created_at', '>=', reference_groups_time_threshold
-        ).where(
-            'group', '==', group_id)
-        group_news = list(group_news_query.stream())
-        reference_news.extend(group_news)
+    
+    for doc in all_news:
+        data = doc.to_dict()
+        group = data.get('group')
         
-    print(f"Found {len(reference_news)} reference news items in the last {REFERENCE_NEWS_DAYS} days")
-    print(f"Fetched {len(reference_news)} total reference news items from {len(recent_groups_ids)} groups")
+        if group is None:
+            ungrouped_news.append(doc)
+        elif group in recent_groups_ids:
+            reference_news.append(doc)
+    
+    print(f"Found {len(ungrouped_news)} ungrouped news items in the last {UNGROUPED_NEWS_DAYS} days")
+    print(f"Found {len(reference_news)} reference news items from {len(recent_groups_ids)} groups")
 
     # Prepare dictionary for all documents
-    news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
+    if fetch_all_news:
+        # Get ALL news documents from Firestore
+        print("⚠️ Fetching ALL news documents. This may use significant memory.")
+        all_news_docs = list(db.collection('news').stream())
+        news_docs = {doc.id: doc for doc in all_news_docs}
+        print(f"Loaded {len(news_docs)} total news documents")
+    else:
+        # Just use the documents we already fetched (more memory efficient)
+        news_docs = {doc.id: doc for doc in ungrouped_news + reference_news}
     
-    # 3. Convertir documentos al formato de procesamiento
+    # Convert documents to processing format
     news_for_grouping = []
     
     for doc in news_docs.values():
         data = doc.to_dict()
-    
         
         news_item = {
             "id": data["id"],
@@ -101,7 +118,7 @@ def get_news_for_grouping() -> tuple:
             "embedding": data["embedding"] if "embedding" in data else None,
         }
         
-        # Añadir grupo existente si lo tiene
+        # Add existing group if it has one
         if data.get("group") is not None:
             news_item["existing_group"] = data["group"]
         
@@ -110,48 +127,117 @@ def get_news_for_grouping() -> tuple:
     print(f"Got {len(ungrouped_news)} news to group and {len(reference_news)} reference news")
     return news_for_grouping, news_docs
 
-def update_groups_in_firestore(grouped_news: list, news_docs: dict) -> int:
+def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     """
     Update group assignments in Firestore
+    
+    Args:
+        groups_data: Either a list of news items (old format) or a list of group objects (new format)
+        news_docs: Dictionary of news documents keyed by ID
+        
+    Returns:
+        tuple: (updated_count, created_count, updated_groups, created_groups) - Numbers and sets of groups
     """
     db = initialize_firebase()
     batch = db.batch()
     updated_count = 0
+    created_count = 0
     current_batch = 0
-        
-    for item in grouped_news:
-        doc_id = item["id"]
-        
-        if doc_id in news_docs:
-            doc = news_docs[doc_id]
-            doc_data = doc.to_dict()
-            doc_ref = doc.reference
+    updated_groups = set()
+    created_groups = set()
+    
+    # Determine if we're getting the new format (with 'sources' property) or old format
+    is_new_format = len(groups_data) > 0 and "sources" in groups_data[0]
+    
+    if is_new_format:
+        # Process the new format (list of group objects with sources)
+        for group_data in groups_data:
+            group_id = group_data.get("group")
+            sources = group_data.get("sources", [])
             
-            # Solo actualizar si la noticia no tenía grupo o si el grupo ha cambiado
-            current_group = doc_data.get("group")
-            new_group = item.get("group")
+            if group_id is not None:
+                group_id = int(float(group_id))
+                
+            # Process each news item in this group
+            for source in sources:
+                doc_id = source.get("id")
+                
+                if doc_id in news_docs:
+                    doc = news_docs[doc_id]
+                    doc_data = doc.to_dict()
+                    doc_ref = doc.reference
+                    
+                    # Get current group and check if it needs updating
+                    current_group = doc_data.get("group")
+                    
+                    # Only update if the group changed
+                    if current_group != group_id:
+                        batch.update(doc_ref, {"group": group_id})
+                        
+                        # Only add to either updated_groups OR created_groups, not both
+                        if current_group is None:
+                            # This is a new group assignment
+                            created_count += 1
+                            if group_id is not None:
+                                created_groups.add(group_id)
+                        else:
+                            # This is updating an existing group
+                            updated_count += 1
+                            if group_id is not None:
+                                updated_groups.add(group_id)
+                            
+                        current_batch += 1
+                        
+                        # Handle batch size limit
+                        if current_batch >= 450:
+                            batch.commit()
+                            batch = db.batch()
+                            current_batch = 0
+    else:
+        # Process the old format (flat list of news items)
+        for noticia in groups_data:
+            doc_id = noticia.get("id")
             
-            # Convertir a entero si no es None
-            if new_group is not None:
-                new_group = int(float(new_group))
+            if doc_id in news_docs:
+                doc = news_docs[doc_id]
+                doc_data = doc.to_dict()
+                doc_ref = doc.reference
                 
-            # Solo actualizar si es necesario
-            if current_group != new_group:                
-                batch.update(doc_ref, {"group": new_group})
-                updated_count += 1
-                current_batch += 1
+                # Solo actualizar si la noticia no tenía grupo o si el grupo ha cambiado
+                current_group = doc_data.get("group")
+                new_group = noticia.get("group")
                 
-                # Firebase has a 500 operation limit per batch
-                if current_batch >= 450:
-                    batch.commit()
-                    batch = db.batch()
-                    current_batch = 0
+                # Convertir a entero si no es None
+                if new_group is not None:
+                    new_group = int(float(new_group))
+                    
+                # Solo actualizar si es necesario
+                if current_group != new_group:
+                    batch.update(doc_ref, {"group": new_group})
+                    
+                    # Track if this is a new group assignment or an update
+                    if current_group is None:
+                        created_count += 1
+                        if new_group is not None:
+                            created_groups.add(new_group)
+                    else:
+                        updated_count += 1
+                        if new_group is not None:
+                            updated_groups.add(new_group)
+                        
+                    current_batch += 1
+                    
+                    # Firebase has a 500 operation limit per batch
+                    if current_batch >= 450:
+                        batch.commit()
+                        batch = db.batch()
+                        current_batch = 0
     
     # Final batch commit if there are pending operations
     if current_batch > 0:
         batch.commit()
     
-    return updated_count
+    return updated_count, created_count, updated_groups, created_groups
 
 def update_news_with_neutral_scores(sources, neutralization_result):
     """

@@ -54,68 +54,6 @@ def get_sentence_transformer_model(retry_count=3):
             print(f"⚠️ Failed to load model from bundled path {bundled_model_path}: {type(e).__name__}: {str(e)}")
             # print("ℹ️ Falling back to downloading the model.")  # Uncommented this line
             # If loading from bundled path fails, proceed to download logic below
-    """
-    # --- Attempt 2: Download model (Fallback or Local) ---
-    cache_dir = None
-    if os.getenv("FUNCTION_TARGET"):
-        # Use /tmp for caching when downloading within Cloud Function (fallback scenario)
-        cache_dir = "/tmp/sentence_transformers_cache"
-        print(f"ℹ️ Using temporary cache directory for download: {cache_dir}")
-        # Attempt to clear the cache directory before download
-        if os.path.exists(cache_dir):
-            print(f"ℹ️ Attempting to clear existing cache directory: {cache_dir}")
-            try:
-                shutil.rmtree(cache_dir)
-                print(f"✅ Successfully cleared cache directory: {cache_dir}")
-            except OSError as e:
-                print(f"⚠️ Warning: Could not remove cache directory {cache_dir}: {e}")
-        try:
-            os.makedirs(cache_dir, exist_ok=True)
-            print(f"✅ Ensured cache directory exists: {cache_dir}")
-        except OSError as e:
-             print(f"❌ Error creating cache directory {cache_dir}: {e}. Proceeding without specific cache folder.")
-             cache_dir = None # Fallback to default library caching if creation fails
-    else:
-        print("ℹ️ Local environment detected. Using default cache for download.")
-
-    # Retry loop for downloading
-    for attempt in range(retry_count):
-        try:
-            print(f"ℹ️ Download Attempt {attempt + 1}/{retry_count}: Loading model '{model_name}'...")
-            if cache_dir:
-                 print(f"ℹ️ Using cache folder: {cache_dir}")
-                 _model = SentenceTransformer(
-                     model_name,
-                     cache_folder=cache_dir
-                 )
-            else:
-                 # Local development or cache creation failed
-                 _model = SentenceTransformer(model_name)
-
-            print(f"✅ Model '{model_name}' downloaded/loaded successfully.")
-            break  # Success! Exit retry loop
-
-        except (OSError, ImportError, Exception) as e: # Catch broader exceptions during download/load
-            print(f"❌ Download Attempt {attempt + 1} failed: {type(e).__name__}: {str(e)}")
-            # Log traceback for detailed debugging on later attempts
-            if attempt > 0:
-                traceback.print_exc()
-
-            if isinstance(e, ImportError):
-                 print("❌ Potential missing dependency. Ensure torch/tensorflow and transformers are installed.")
-
-            if attempt == retry_count - 1:  # If this was the last attempt
-                print(f"❌ Failed to load/download the model after {retry_count} attempts.")
-                # Re-raise the last exception caught
-                raise RuntimeError(
-                    f"Failed to load/download the model after {retry_count} attempts. Last error: {str(e)}"
-                ) from e
-
-            # Exponential backoff
-            wait_time = 2 ** attempt
-            print(f"ℹ️ Retrying download in {wait_time} seconds...")
-            time.sleep(wait_time)
-    """
     return _model
 def group_news(news_list: list) -> list:
     """
@@ -136,13 +74,17 @@ def group_news(news_list: list) -> list:
         # Step 3: Perform clustering if we have valid embeddings
         clustering_succeeded = perform_clustering(all_items_for_clustering_df, embeddings_norm, df, has_reference_news)
         if not clustering_succeeded:
-            return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
+            # Include existing_group in the early return
+            result_columns = ["id", "group", "title", "scraped_description", "description", "source_medium"]
+            if has_reference_news and "existing_group" in df.columns:
+                result_columns.append("existing_group")
+            return df[result_columns].to_dict(orient='records')
         
         # Step 4: Assign final group IDs
         assign_group_ids(df, has_reference_news)
         
-        # Step 5: Process results and handle deduplication
-        result = process_results(df)
+        # Step 5: Process results and handle deduplication - preserve existing_group when present
+        result = process_results(df, has_reference_news)
         
         print("✅ Grouping completed successfully")
         return result
@@ -151,7 +93,10 @@ def group_news(news_list: list) -> list:
         print(f"❌ Error in group_news: {str(e)}")
         traceback.print_exc()
         if 'df' in locals() and isinstance(df, pd.DataFrame):
-             return df[["id", "group", "title", "scraped_description", "description", "source_medium"]].to_dict(orient='records')
+            result_columns = ["id", "group", "title", "scraped_description", "description", "source_medium"]
+            if "existing_group" in df.columns:
+                result_columns.append("existing_group")
+            return df[result_columns].to_dict(orient='records')
         return []
 
 def setup_news_dataframe(news_list: list) -> tuple:
@@ -412,6 +357,7 @@ def assign_group_ids(df, has_reference_news):
                                 print(f"ℹ️ Low similarity ({avg_similarity:.3f}) - creating new group {next_new_group_id}")
                         else:
                             # Not enough embeddings to calculate similarity, use default assignment
+                            print(f"⚠️ Not enough embeddings to calculate similarity for group {most_common_group}. Assigning to new group {next_new_group_id}")
                             target_existing_group = next_new_group_id
                     else:
                         # We found an alternative group already
@@ -444,7 +390,7 @@ def assign_group_ids(df, has_reference_news):
                                         new_group_id = next_new_group_id + subtopic
                                         df.loc[df['id'] == item_id, 'group'] = new_group_id
                                     
-                                    print(f"ℹ️ Subdivided large group {target_existing_group} into {num_topics} separate groups")
+                                    print(f"ℹ️ Subdivided large group {target_existing_group} into {num_topics} separate groups: {sorted(item_to_subtopic.values())}")
                                     continue  # Skip the regular assignment below
                         except Exception as e:
                             print(f"⚠️ Error in topic modeling: {str(e)}")
@@ -480,7 +426,7 @@ def assign_group_ids(df, has_reference_news):
     # Clean up temp column
     df.drop(columns=['temp_group'], inplace=True, errors='ignore')
 
-def process_results(df):
+def process_results(df, has_reference_news=False):
     """
     Process final results, handling deduplication and edge cases
     """
@@ -496,12 +442,18 @@ def process_results(df):
         # Handle single news item in group case
         if len(group_df) == 1 and not group_df.iloc[0]["is_reference"]:
             item_row = group_df.iloc[0]
-            result.append({
+            result_item = {
                 "id": item_row["id"], "group": None, "title": item_row["title"],
                 "scraped_description": item_row["scraped_description"], 
                 "description": item_row.get("description", ""),
                 "source_medium": item_row["source_medium"]
-            })
+            }
+            
+            # Include existing_group if present
+            if has_reference_news and "existing_group" in item_row and pd.notna(item_row["existing_group"]):
+                result_item["existing_group"] = item_row["existing_group"]
+                
+            result.append(result_item)
             processed_ids_for_result.add(item_row["id"])
             continue
 
@@ -512,14 +464,20 @@ def process_results(df):
         reference_items_in_final_group = group_df[group_df["is_reference"] == True]
         for _, item_row in reference_items_in_final_group.iterrows():
             if item_row["source_medium"] not in seen_media_in_group:
-                current_group_items_for_result.append({
+                result_item = {
                     "id": item_row["id"], 
                     "group": group_id, 
                     "title": item_row["title"],
                     "scraped_description": item_row["scraped_description"],
                     "description": item_row.get("description", ""),
                     "source_medium": item_row["source_medium"]
-                })
+                }
+                
+                # Include existing_group for reference items
+                if has_reference_news and "existing_group" in item_row and pd.notna(item_row["existing_group"]):
+                    result_item["existing_group"] = item_row["existing_group"]
+                    
+                current_group_items_for_result.append(result_item)
                 seen_media_in_group.add(item_row["source_medium"])
                 processed_ids_for_result.add(item_row["id"])
         
@@ -527,14 +485,20 @@ def process_results(df):
         non_reference_items_in_final_group = group_df[group_df["is_reference"] == False]
         for _, item_row in non_reference_items_in_final_group.iterrows():
             if item_row["id"] not in processed_ids_for_result and item_row["source_medium"] not in seen_media_in_group:
-                current_group_items_for_result.append({
+                result_item = {
                     "id": item_row["id"], 
                     "group": group_id, 
                     "title": item_row["title"],
                     "scraped_description": item_row["scraped_description"],
                     "description": item_row.get("description", ""),
                     "source_medium": item_row["source_medium"]
-                })
+                }
+                
+                # Track existing_group when available (might be None/NaN)
+                if has_reference_news and "existing_group" in item_row and pd.notna(item_row["existing_group"]):
+                    result_item["existing_group"] = item_row["existing_group"]
+                    
+                current_group_items_for_result.append(result_item)
                 seen_media_in_group.add(item_row["source_medium"])
                 processed_ids_for_result.add(item_row["id"])
 
@@ -549,14 +513,20 @@ def process_results(df):
     # Add any remaining ungrouped items
     for index, row in df.iterrows():
         if row["id"] not in processed_ids_for_result:
-            result.append({
+            result_item = {
                 "id": row["id"], 
                 "group": row["group"],
                 "title": row["title"], 
                 "scraped_description": row["scraped_description"],
                 "description": row.get("description", ""),
                 "source_medium": row["source_medium"]
-            })
+            }
+            
+            # Include existing_group if present
+            if has_reference_news and "existing_group" in row and pd.notna(row["existing_group"]):
+                result_item["existing_group"] = row["existing_group"]
+                
+            result.append(result_item)
     
     # Final check for all items having None as group
     all_groups_are_none = all(r.get("group") is None for r in result)
@@ -566,7 +536,6 @@ def process_results(df):
             item_dict["group"] = i
 
     return result
-
 def extract_titles_and_descriptions(df_embeddings):
     titles = df_embeddings["title"].fillna("")
             
