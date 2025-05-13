@@ -252,20 +252,47 @@ def generate_neutral_analysis_batch(group_batch):
             # Select only one source per press medium (the most recently published)
             if len(valid_sources) > 0:
                 sources_by_medium = {}
+                sources_to_delete = []  # Track sources that will be overridden
+                
                 for source in valid_sources:
                     medium = source.get('source_medium')
                     
                     # Check for date fields (try different possible field names)
-                    published_date = source.get('published_at') or source.get('created_at') or source.get('date')
+                    published_date = source.get('pub_date') or source.get('created_at') or source.get('date')
                     
                     if medium:
-                        # If this medium isn't in our dict yet or if this source is more recent
-                        if medium not in sources_by_medium or (
-                            published_date and 
-                            (not sources_by_medium[medium].get('published_at') or 
-                             published_date > sources_by_medium[medium].get('published_at'))
-                        ):
+                        # If we already have a source for this medium
+                        if medium in sources_by_medium:
+                            existing_source = sources_by_medium[medium]
+                            existing_date = existing_source.get('pub_date') or existing_source.get('created_at') or existing_source.get('date')
+                            
+                            # Compare dates to keep the most recent one
+                            if published_date and existing_date and published_date > existing_date:
+                                # This source is newer, so the existing one should be deleted
+                                sources_to_delete.append(existing_source)
+                                sources_by_medium[medium] = source
+                            else:
+                                # The existing source is newer or no date comparison possible
+                                sources_to_delete.append(source)
+                        else:
+                            # First source for this medium
                             sources_by_medium[medium] = source
+                
+                # Update overridden sources to remove group assignment instead of deleting them
+                if sources_to_delete:
+                    print(f"🔄 Updating {len(sources_to_delete)} overridden news items to remove group assignment")
+                    db = initialize_firebase()
+                    for source in sources_to_delete:
+                        source_id = source.get('id')
+                        if source_id:
+                            try:
+                                db.collection('news').document(source_id).update({
+                                    'group': None,
+                                    'updated_at': None
+                                })
+                                print(f"  Updated news item {source_id} from {source.get('source_medium')}")
+                            except Exception as e:
+                                print(f"  Failed to update news item {source_id}: {str(e)}")
                 
                 # Replace valid_sources with the deduplicated list
                 valid_sources = list(sources_by_medium.values())
@@ -280,6 +307,7 @@ def generate_neutral_analysis_batch(group_batch):
                 if len(valid_sources) < 2:
                     results.append(None)
                     print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
+
                     continue
 
             # Calculate average description length for this group
