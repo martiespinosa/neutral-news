@@ -132,7 +132,7 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     Update group assignments in Firestore
     
     Args:
-        groups_data: Either a list of news items (old format) or a list of group objects (new format)
+        groups_data: List of group objects
         news_docs: Dictionary of news documents keyed by ID
         
     Returns:
@@ -145,89 +145,47 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     current_batch = 0
     updated_groups = set()
     created_groups = set()
-    
-    # Determine if we're getting the new format (with 'sources' property) or old format
-    is_new_format = len(groups_data) > 0 and "sources" in groups_data[0]
-    
-    if is_new_format:
-        # Process the new format (list of group objects with sources)
-        for group_data in groups_data:
-            group_id = group_data.get("group")
-            sources = group_data.get("sources", [])
+
+    for group_data in groups_data:
+        group_id = group_data.get("group")
+        sources = group_data.get("sources", [])
+        
+        if group_id is not None:
+            group_id = int(float(group_id))
             
-            if group_id is not None:
-                group_id = int(float(group_id))
-                
-            # Process each news item in this group
-            for source in sources:
-                doc_id = source.get("id")
-                
-                if doc_id in news_docs:
-                    doc = news_docs[doc_id]
-                    doc_data = doc.to_dict()
-                    doc_ref = doc.reference
-                    
-                    # Get current group and check if it needs updating
-                    current_group = doc_data.get("group")
-                    
-                    # Only update if the group changed
-                    if current_group != group_id:
-                        batch.update(doc_ref, {"group": group_id})
-                        
-                        # Only add to either updated_groups OR created_groups, not both
-                        if current_group is None:
-                            # This is a new group assignment
-                            created_count += 1
-                            if group_id is not None:
-                                created_groups.add(group_id)
-                        else:
-                            # This is updating an existing group
-                            updated_count += 1
-                            if group_id is not None:
-                                updated_groups.add(group_id)
-                            
-                        current_batch += 1
-                        
-                        # Handle batch size limit
-                        if current_batch >= 450:
-                            batch.commit()
-                            batch = db.batch()
-                            current_batch = 0
-    else:
-        # Process the old format (flat list of news items)
-        for noticia in groups_data:
-            doc_id = noticia.get("id")
+        # Process each news item in this group
+        for source in sources:
+            doc_id = source.get("id")
             
             if doc_id in news_docs:
                 doc = news_docs[doc_id]
                 doc_data = doc.to_dict()
                 doc_ref = doc.reference
                 
-                # Solo actualizar si la noticia no tenía grupo o si el grupo ha cambiado
+                # Get current group and check if it needs updating
                 current_group = doc_data.get("group")
-                new_group = noticia.get("group")
                 
-                # Convertir a entero si no es None
-                if new_group is not None:
-                    new_group = int(float(new_group))
-                    
-                # Solo actualizar si es necesario
-                if current_group != new_group:
-                    batch.update(doc_ref, {"group": new_group})
-                    
-                    # Track if this is a new group assignment or an update
+                # Only update if the group changed
+                if current_group != group_id:
+                    batch.update(doc_ref, {
+                        "group": group_id,
+                        "updated_at": datetime.now()
+                        })
+                    # Only add to either updated_groups OR created_groups, not both
                     if current_group is None:
+                        # This is a new group assignment
                         created_count += 1
-                        if new_group is not None:
-                            created_groups.add(new_group)
+                        if group_id is not None:
+                            created_groups.add(group_id)
                     else:
+                        # This is updating an existing group
                         updated_count += 1
-                        if new_group is not None:
-                            updated_groups.add(new_group)
+                        if group_id is not None:
+                            updated_groups.add(group_id)
                         
                     current_batch += 1
                     
-                    # Firebase has a 500 operation limit per batch
+                    # Handle batch size limit
                     if current_batch >= 450:
                         batch.commit()
                         batch = db.batch()
@@ -238,6 +196,66 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
         batch.commit()
     
     return updated_count, created_count, updated_groups, created_groups
+
+def update_news_in_firestore(groups_prepared: list) -> tuple:
+    """
+    Update news documents in Firestore based on group changes using groups_prepared.
+    
+    Args:
+        groups_prepared: List of prepared groups with their sources
+        
+    Returns:
+        tuple: (updated_news_count, created_news_count, updated_news) - Numbers and list of updated news document IDs
+    """
+    db = initialize_firebase()
+    batch = db.batch()
+    updated_news_count = 0
+    created_news_count = 0
+    current_batch = 0
+    updated_news = []
+
+    for group in groups_prepared:
+        group_id = group.get("group")
+        sources = group.get("sources", [])
+
+        for source in sources:
+            doc_id = source.get("id")
+            if not doc_id:
+                continue
+
+            # Fetch the document reference
+            doc_ref = db.collection('news').document(doc_id)
+            doc = doc_ref.get()
+            if not doc.exists:
+                continue
+
+            doc_data = doc.to_dict()
+            current_group_id = doc_data.get("group")
+
+            # Update the document's group if it has changed
+            if current_group_id != group_id:
+                batch.update(doc_ref, {
+                    "group": group_id,
+                    "updated_at": datetime.now()
+                })
+                updated_news.append(doc_id)
+                if current_group_id is None:
+                    created_news_count += 1
+                else:
+                    updated_news_count += 1
+                current_batch += 1
+
+            # Handle batch size limit
+            if current_batch >= 450:
+                batch.commit()
+                batch = db.batch()
+                current_batch = 0
+
+    # Final batch commit if there are pending operations
+    if current_batch > 0:
+        batch.commit()
+
+    return updated_news_count, created_news_count, updated_news
 
 def update_news_with_neutral_scores(sources, neutralization_result):
     """

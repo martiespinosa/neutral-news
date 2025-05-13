@@ -34,7 +34,7 @@ def neutralize_and_more(news_groups, batch_size=5):
         to_neutralize_count = 0
         to_neutralize_ids = []
         
-        for group in news_groups:   
+        for group in news_groups:
             group_number = group.get('group')
             if group_number is not None:
                 group_number = int(float(group_number))

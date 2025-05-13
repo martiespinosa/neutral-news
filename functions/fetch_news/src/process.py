@@ -3,6 +3,7 @@ from collections import defaultdict
 from src.grouping import group_news
 from src.storage import get_news_for_grouping
 from src.storage import update_groups_in_firestore
+from src.storage import update_news_in_firestore
 from src.neutralization import neutralize_and_more
 
 def process_news_groups(fetch_all_news=False):
@@ -19,12 +20,15 @@ def process_news_groups(fetch_all_news=False):
         groups_prepared = prepare_groups_for_neutralization(grouped_news)
         print(f"ℹ️ Prepared {len(groups_prepared)} news groups for neutralization")
 
-        # Update groups in Firestore - pass the prepared groups instead of raw grouped news
+        # Update groups in Firestore
         updated_count, created_count, updated_groups, created_groups = update_groups_in_firestore(groups_prepared, news_docs)
-        print(f"Updated {updated_count} news items in {len(updated_groups)} groups")
-        print(f"Created {created_count} new news group assignments")
+        print(f"Updated {updated_count} groups and created {created_count} new groups in Firestore")
         print(f"Updated groups: {updated_groups}")
         print(f"Created groups: {created_groups}")
+        # Update news in Firestore
+        updated_news_count, created_news_count, updated_news = update_news_in_firestore(news_docs, updated_groups, created_groups)
+        print(f"Updated {updated_news_count} news documents and created {created_news_count} new news documents in Firestore")
+        print(f"Updated news documents: {updated_news}")
         
         # Neutralizar los grupos recién creados y guardarlos
         neutralized_count = neutralize_and_more(groups_prepared)
