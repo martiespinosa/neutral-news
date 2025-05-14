@@ -11,8 +11,7 @@ def main():
     cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
     firebase_admin.initialize_app(cred)
     db = firestore.client()
-
-    # Set group field to None for groups associated with deleted source_ids
+    
     print("Updating groups associated with deleted source_ids...")
     group_update_count = 0
 
@@ -21,8 +20,22 @@ def main():
         print(f"🔄 Updating news document {group_doc.id}.")
         group_doc.reference.update({'neutral_score': None})
         group_update_count += 1
-
     print(f"\n✅ Finished. Updated {group_update_count} news documents to set neutral_score to None.")
-
+    
+    group_update_count = 0
+    group_docs = db.collection('news').where('group', '!=', None).stream()
+    for group_doc in group_docs:
+        print(f"🔄 Updating news document {group_doc.id}.")
+        group_doc.reference.update({'group': None})
+        group_update_count += 1
+    print(f"\n✅ Finished. Updated {group_update_count} news documents to set group to None.")
+    
+    group_update_count = 0
+    group_docs = db.collection('news').where('updated_at', '!=', None).stream()
+    for group_doc in group_docs:
+        print(f"🔄 Updating news document {group_doc.id}.")
+        group_doc.reference.update({'updated_at': None})
+        group_update_count += 1
+    print(f"\n✅ Finished. Updated {group_update_count} news documents to set updated_at to None.")
 if __name__ == '__main__':
     main() 

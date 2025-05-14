@@ -389,22 +389,28 @@ def _process_cluster_without_references(df, cluster_items, db_cluster_id,
         print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
 
 def _get_next_available_group_id(df):
-    """Calculate the next available group ID."""
+    """Calculate the next available group ID, ignoring 7-digit subdivision IDs."""
     # Get maximum existing group ID
     max_existing_group = 0
     if 'existing_group' in df.columns and not df['existing_group'].dropna().empty:
-        # Filter to only numeric values
+        # Filter to only numeric values and exclude 7-digit IDs
         numeric_existing = pd.to_numeric(df['existing_group'].dropna(), errors='coerce').dropna()
         if not numeric_existing.empty:
-            max_existing_group = numeric_existing.max()
+            # Filter out 7-digit IDs (subdivision IDs)
+            regular_ids = numeric_existing[numeric_existing < 1000000]
+            if not regular_ids.empty:
+                max_existing_group = regular_ids.max()
     
     # Get maximum assigned new group ID
     max_assigned_group = 0
     if 'group' in df.columns and not df['group'].dropna().empty:
-        # Filter to only numeric values
+        # Filter to only numeric values and exclude 7-digit IDs
         numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
         if not numeric_groups.empty:
-            max_assigned_group = numeric_groups.max()
+            # Filter out 7-digit IDs (subdivision IDs)
+            regular_ids = numeric_groups[numeric_groups < 1000000]
+            if not regular_ids.empty:
+                max_assigned_group = regular_ids.max()
     
     # Return next available ID
     return max(int(max_existing_group), int(max_assigned_group)) + 1
