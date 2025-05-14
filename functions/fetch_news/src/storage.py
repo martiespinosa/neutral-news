@@ -280,7 +280,7 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
 
         image_url, image_medium = get_most_neutral_image(
-            source_ids, 
+            source_ids,  
             neutralization_result.get("source_ratings", [])
         )
         
@@ -442,6 +442,7 @@ def get_oldest_pub_date(source_ids, db):
     Asegura que la fecha no sea más antigua que 3 días.
     """
     pub_dates = []
+    # Create a naive datetime for cutoff comparison
     cutoff_date = datetime.now() - timedelta(days=3)
     batch = db.batch()
     batch_count = 0
@@ -506,10 +507,18 @@ def get_oldest_pub_date(source_ids, db):
                         
                         pub_date = datetime.strptime(cleaned_date_str, date_format)
                         
+                        # Convert timezone-aware datetime to naive for comparison
+                        if hasattr(pub_date, 'tzinfo') and pub_date.tzinfo is not None:
+                            # Convert to UTC and then remove timezone info
+                            pub_date = pub_date.astimezone(None).replace(tzinfo=None)
+                        
                         # Check if the date is older than our cutoff
                         if pub_date < cutoff_date:
                             # Use created_at if available, otherwise use current date
                             if created_at:
+                                # Ensure created_at is also timezone-naive
+                                if hasattr(created_at, 'tzinfo') and created_at.tzinfo is not None:
+                                    created_at = created_at.replace(tzinfo=None)
                                 pub_date = created_at
                                 # Update the document with created_at as pub_date
                                 batch.update(doc.reference, {"pub_date": created_at})
@@ -531,6 +540,9 @@ def get_oldest_pub_date(source_ids, db):
                     print(f"No se pudo parsear la fecha: {pub_date_str}")
                     # If we can't parse the date, use created_at or current time
                     if created_at:
+                        # Ensure created_at is timezone-naive
+                        if hasattr(created_at, 'tzinfo') and created_at.tzinfo is not None:
+                            created_at = created_at.replace(tzinfo=None)
                         pub_dates.append(created_at)
                     else:
                         pub_dates.append(datetime.now())
