@@ -49,8 +49,8 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    RECENT_GROUPS_HOURS = 24 # Number of hours to look back for recent groups
-    REFERENCE_NEWS_HOURS = 48 # Number of hours to look back for reference news
+    RECENT_GROUPS_HOURS = 4 # Number of hours to look back for recent groups
+    REFERENCE_NEWS_HOURS = 4 # Number of hours to look back for reference news
 
     # Get recent unique group IDs
     recent_groups_time_threshold = datetime.now() - timedelta(hours=RECENT_GROUPS_HOURS)
@@ -186,59 +186,6 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     
     return updated_count, created_count, updated_groups, created_groups
 
-def update_news_in_firestore(news_docs: dict, updated_groups: set, created_groups: set) -> tuple:
-    """
-    Update news documents in Firestore based on group changes.
-    
-    Args:
-        news_docs: Dictionary of news documents keyed by ID
-        updated_groups: Set of group IDs that were updated
-        created_groups: Set of group IDs that were newly created
-        
-    Returns:
-        tuple: (updated_news_count, created_news_count, updated_news) - Numbers and list of updated news document IDs
-    """
-    db = initialize_firebase()
-    batch = db.batch()
-    updated_news_count = 0
-    created_news_count = 0
-    current_batch = 0
-    updated_news = []
-
-    # Process all news docs to update them with their respective groups
-    for doc_id, doc in news_docs.items():
-        doc_data = doc.to_dict()
-        doc_ref = doc.reference
-        current_group_id = doc_data.get("group")
-        
-        # Check if this document's group is in either updated or created groups
-        if current_group_id in updated_groups:
-            batch.update(doc_ref, {
-                "updated_at": datetime.now()
-            })
-            updated_news.append(doc_id)
-            updated_news_count += 1
-            current_batch += 1
-        elif current_group_id in created_groups:
-            batch.update(doc_ref, {
-                "updated_at": datetime.now()
-            })
-            updated_news.append(doc_id)
-            created_news_count += 1
-            current_batch += 1
-
-        # Handle batch size limit
-        if current_batch >= 450:
-            batch.commit()
-            batch = db.batch()
-            current_batch = 0
-
-    # Final batch commit if there are pending operations
-    if current_batch > 0:
-        batch.commit()
-
-    return updated_news_count, created_news_count, updated_news
-
 def update_news_with_neutral_scores(sources, neutralization_result):
     """
     Actualiza las noticias originales con sus puntuaciones de neutralidad.
@@ -346,7 +293,7 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
         traceback.print_exc()
         return False
     
-def update_existing_neutral_news(group, neutralization_result, source_ids):
+def update_existing_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None):
     """
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
     """
@@ -355,7 +302,14 @@ def update_existing_neutral_news(group, neutralization_result, source_ids):
         
         if group is not None:
             group = int(float(group))
-
+            
+        group_str = str(group)
+        if sources_to_unassign and group_str in sources_to_unassign:
+            for source_id in sources_to_unassign[group_str]:
+                if source_id in source_ids:
+                    source_ids.remove(source_id)
+                    print(f"  Removed source {source_id} from sources list for group {group}")
+        
         image_url, image_medium = get_most_neutral_image(
             source_ids, 
             neutralization_result.get("source_ratings", [])

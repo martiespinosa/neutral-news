@@ -3,7 +3,6 @@ from collections import defaultdict
 from src.grouping import group_news
 from src.storage import get_news_for_grouping
 from src.storage import update_groups_in_firestore
-from src.storage import update_news_in_firestore
 from src.neutralization import neutralize_and_more
 from src.config import initialize_firebase
 

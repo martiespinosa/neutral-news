@@ -117,11 +117,18 @@ def neutralize_and_more(news_groups, batch_size=5):
             
             if current_batch_to_update:
                 # Removed validation - directly process the batch
-                results = generate_neutral_analysis_batch(current_batch_to_update, is_update=True)
+                response = generate_neutral_analysis_batch(current_batch_to_update, is_update=True)
                 
-                if results is None:
+                if response is None:
                     print("⚠️ Stopping processing due to rate limit or quota exceeded.")
                     break
+                
+                # Unpack the response - now it returns both results and group_dict
+                if isinstance(response, tuple) and len(response) == 2:
+                    results, sources_to_unassign = response
+                else:
+                    results = response
+                    sources_to_unassign = {}
                 
                 for result, group_info in zip(results, current_batch_to_update):
                     if not result:
@@ -132,7 +139,7 @@ def neutralize_and_more(news_groups, batch_size=5):
                     source_ids = group_info['source_ids']
                     
                     # Actualizar el documento existente en neutral_news
-                    if (update_existing_neutral_news(group, result, source_ids)):
+                    if (update_existing_neutral_news(group, result, source_ids, sources_to_unassign)):
                         updated_count += 1
                         updated_groups.append(group)
                     # Actualizar las noticias originales con su puntuación de neutralidad
@@ -191,9 +198,8 @@ def generate_neutral_analysis_batch(group_batch, is_update):
     if not group_batch:
         return []
         
-    if not is_update:
-        # Create a base dictionary that will store group IDs that have not yet been created in the firestore database, and their source IDs that we want to unassign from the group
-        group_dict = {}
+    # Create a base dictionary that will store group IDs that have not yet been created in the firestore database, and their source IDs that we want to unassign from the group
+    group_dict = {}
     results = []
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -307,11 +313,10 @@ def generate_neutral_analysis_batch(group_batch, is_update):
                                     })
                                 # Si no es una actualizacion, el grupo no existe, por lo que no se puede eliminar el source_id
                                 # Guardamos el source_id en el diccionario de grupo-source_ids, para eliminarlo después
-                                else:
-                                    # Agregar el source_id al diccionario de grupo-source_ids
-                                    if str(group_id) not in group_dict:
-                                        group_dict[str(group_id)] = []
-                                    group_dict[str(group_id)].append(source_id)
+                                # Agregar el source_id al diccionario de grupo-source_ids
+                                if str(group_id) not in group_dict:
+                                    group_dict[str(group_id)] = []
+                                group_dict[str(group_id)].append(source_id)
                                 print(f"  Updated news item {source_id} from {source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to update news item {source_id}: {str(e)}")
@@ -346,11 +351,10 @@ def generate_neutral_analysis_batch(group_batch, is_update):
                                     neutral_doc_ref.update({
                                         'source_ids': firestore.ArrayRemove([source_id])
                                     })
-                                else:
-                                    # Agregar el source_id al diccionario de grupo-source_ids
-                                    if str(group_id) not in group_dict:
-                                        group_dict[str(group_id)] = []
-                                    group_dict[str(group_id)].append(source_id)
+                                # Agregar el source_id al diccionario de grupo-source_ids
+                                if str(group_id) not in group_dict:
+                                    group_dict[str(group_id)] = []
+                                group_dict[str(group_id)].append(source_id)
                                 print(f"  Unassigned group from the only remaining source {source_id} from {remaining_source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to unassign group from source {source_id}: {str(e)}")
@@ -385,6 +389,7 @@ def generate_neutral_analysis_batch(group_batch, is_update):
             
             while retry_count < max_retries:
                 try:
+                    print(f"ℹ️ Generating neutral analysis for group {group_id} (attempt {retry_count + 1})")
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -448,16 +453,10 @@ def generate_neutral_analysis_batch(group_batch, is_update):
             # Only append the result if we didn't encounter a rate limit error
             if retry_count < max_retries or result is not None:
                 results.append(result)
-                
-        # Return both results and the group_dict if we're not updating
-        if not is_update:
-            return results, group_dict
-        return results
+        return results, group_dict
         
     except Exception as e:
         print(f"Error in generate_neutral_analysis_batch: {str(e)}")
         import traceback
         traceback.print_exc()
-        if not is_update:
-            return [None] * len(group_batch), {}
-        return [None] * len(group_batch)
+        return [None] * len(group_batch), {}
