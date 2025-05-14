@@ -471,10 +471,37 @@ def get_oldest_pub_date(source_ids, db):
                 for date_format in date_formats:
                     try:
                         cleaned_date_str = pub_date_str
-                        if "+0000" not in pub_date_str and "-0000" not in pub_date_str:
-                            for tz in [" GMT", " UTC", " UT", " Z"]:
+                        # Handle common timezone abbreviations
+                        timezone_mappings = {
+                            " GMT": " +0000",
+                            " UTC": " +0000",
+                            " UT": " +0000",
+                            " Z": " +0000",
+                            " EST": " -0500",
+                            " EDT": " -0400",
+                            " CST": " -0600",
+                            " CDT": " -0500",
+                            " MST": " -0700",
+                            " MDT": " -0600",
+                            " PST": " -0800",
+                            " PDT": " -0700",
+                            " BST": " +0100",
+                            " CET": " +0100",
+                            " CEST": " +0200",
+                            " JST": " +0900",
+                            " IST": " +0530",
+                            " AEST": " +1000",
+                            " AEDT": " +1100"
+                        }
+                        
+                        # If there's no timezone offset in the string
+                        if "+0000" not in pub_date_str and "-0000" not in pub_date_str and \
+                           not any(f"+{i:02d}00" in pub_date_str or f"-{i:02d}00" in pub_date_str for i in range(24)):
+                            
+                            # Check for timezone abbreviations at the end
+                            for tz, offset in timezone_mappings.items():
                                 if pub_date_str.endswith(tz):
-                                    cleaned_date_str = pub_date_str.replace(tz, " +0000")
+                                    cleaned_date_str = pub_date_str.replace(tz, offset)
                                     break
                         
                         pub_date = datetime.strptime(cleaned_date_str, date_format)
