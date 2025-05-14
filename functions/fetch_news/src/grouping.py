@@ -368,6 +368,7 @@ def _process_cluster_with_references(df, cluster_items, db_cluster_id,
                 # Low similarity - create a new group
                 next_group_id = _get_next_available_group_id(df)
                 df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+                target_group = next_group_id
                 print(f"ℹ️ Low similarity ({similarity:.3f}) - created new group {next_group_id}")
             else:
                 # High similarity - assign to target group
