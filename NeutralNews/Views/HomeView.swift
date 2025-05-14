@@ -59,6 +59,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { orderMenu }
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
     }
     

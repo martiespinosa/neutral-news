@@ -37,7 +37,7 @@ struct MediaHeadlineView: View {
         }
         .padding()  
         .frame(width: 220, height: 220)
-        .background(.regularMaterial)
+        .background(.thinMaterial)
         .clipShape(.rect(cornerRadius: 20))
     }
 }

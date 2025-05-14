@@ -26,9 +26,6 @@ struct NewsView: View {
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // TODO: Quitar la fecha o formatearla
-                        Text(news.pubDate)
-                        
                         // TODO: Pedir permiso para usar los logos de los medios?
                         if let uiImage = UIImage(named: news.sourceMedium.pressMedia.name.normalized()) {
                             Image(uiImage: uiImage)
@@ -84,7 +81,7 @@ struct NewsView: View {
                         
                         Spacer()
                         
-                        Text("Neutral News es independiente, no está asociado a \(news.sourceMedium.pressMedia.name) ni ningún otro medio de comunicación.")
+                        Text("Neutral News es independiente, no está asociado a \(news.sourceMedium.pressMedia.name) ni a ningún otro medio de comunicación.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -97,6 +94,7 @@ struct NewsView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
     }
 }
