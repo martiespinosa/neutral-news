@@ -477,55 +477,119 @@ def _subdivide_group(df, items, base_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_S
         }
         
         # Use 7-digit IDs derived from the base_group_id
-        # Convert base_group_id to int to ensure numeric operations work
-        base_id = 7777777
-        try:
-            base_group_id_int = int(base_group_id)
-            # Convert to string to get the first digits
-            base_group_str = str(base_group_id_int)
-            
-            # If base_group_id has more than 7 digits already, use it as is
-            if len(base_group_str) >= 7:
-                base_id = base_group_id_int
-            else:
-                # Take the first digits and append zeros to get a 7-digit number
-                # For example: 42 -> 4200000, 123 -> 1230000
-                first_digits = base_group_str
-                zeros_needed = 7 - len(first_digits)
-                base_id = int(first_digits + '0' * zeros_needed)
-        except (ValueError, TypeError):
-            # Fallback if base_group_id can't be converted to int
-            base_id = 7777777
-            print(f"⚠️ Could not derive base_id from {base_group_id}, using default {base_id}")
+        base_id = _generate_base_id(df, base_group_id, num_subgroups)
         
-        # Check if any existing groups already use IDs in this range
-        target_range_end = base_id + num_subgroups
-        if 'group' in df.columns and not df['group'].dropna().empty:
-            # Convert to numeric, ignoring errors
-            numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
-            
-            # Check for conflicts in the range we want to use
-            conflicting_ids = numeric_groups[(numeric_groups >= base_id) & (numeric_groups < target_range_end)]
-            if not conflicting_ids.empty:
-                # If there's a conflict, find a new base_id
-                base_id = max(base_id, int(conflicting_ids.max()) + 1)
-                print(f"⚠️ ID conflict detected. Using new base_id: {base_id}")
+        # Evaluate quality of each cluster before assigning group IDs
+        created_groups = _evaluate_cluster_quality(df, items, subtopic_labels, embeddings, item_to_subtopic, base_id)
         
-        # Assign new group IDs
-        for item_id, subtopic in item_to_subtopic.items():
-            new_group_id = base_id + subtopic
-            df.loc[df['id'] == item_id, 'group'] = new_group_id
-        
-        print(f"ℹ️ Subdivided group {base_group_id} into {num_subgroups} smaller groups (IDs: {base_id}-{base_id + num_subgroups - 1})")
-        print(f"⚠️ Note: Original group {base_group_id} is now logically empty as all its items were moved to subgroups")
-        
-        # Note: The original group ID still exists in the system, but has no news items assigned to it.
-        # Updating the database to remove empty groups would be handled in a separate process
-        # if needed, not during the grouping phase.
+        if created_groups:
+            min_id = min(created_groups)
+            max_id = max(created_groups)
+            print(f"ℹ️ Subdivided group {base_group_id} into {len(created_groups)} quality groups (IDs: {min_id}-{max_id})")
+            print(f"ℹ️ Created groups: {sorted(created_groups)}")
+        else:
+            print(f"⚠️ No quality subgroups found for group {base_group_id}. Items remain in original group.")
+            # Keep items in the original group
+            df.loc[df['id'].isin(items['id']), 'group'] = base_group_id
         
     except Exception as e:
         print(f"⚠️ Error in group subdivision: {str(e)}")
+        traceback.print_exc()
         # Fall back to not subdividing
+
+def _evaluate_cluster_quality(df, items, subtopic_labels, embeddings, item_to_subtopic, base_id):
+    """
+    Evaluate the quality of each cluster and only create groups for good clusters.
+    Returns a list of group IDs that were actually created.
+    """
+    SIMILARITY_THRESHOLD = 0.65  # Minimum average similarity required for a cluster
+    MIN_CLUSTER_SIZE = 2  # Minimum number of items needed in a cluster
+    
+    # Track created groups
+    created_groups = []
+    
+    # Count items per cluster
+    unique_subtopics = np.unique(subtopic_labels)
+    print(f"ℹ️ K-means created {len(unique_subtopics)} clusters")
+    
+    # For each cluster, evaluate quality
+    for subtopic in unique_subtopics:
+        # Get embeddings for this cluster
+        cluster_indices = [i for i, label in enumerate(subtopic_labels) if label == subtopic]
+        cluster_embeddings = embeddings[cluster_indices]
+        
+        # Skip clusters that are too small
+        if len(cluster_embeddings) < MIN_CLUSTER_SIZE:
+            print(f"ℹ️ Cluster {subtopic} skipped: too small ({len(cluster_embeddings)} items)")
+            continue
+        
+        # Calculate average pairwise similarity within cluster
+        similarities = []
+        for i in range(len(cluster_embeddings)):
+            for j in range(i+1, len(cluster_embeddings)):
+                sim = np.dot(cluster_embeddings[i], cluster_embeddings[j])
+                similarities.append(sim)
+        
+        if not similarities:
+            avg_similarity = 0
+        else:
+            avg_similarity = sum(similarities) / len(similarities)
+        
+        # Create group only if similarity is above threshold
+        if avg_similarity >= SIMILARITY_THRESHOLD:
+            new_group_id = base_id + subtopic
+            
+            # Get IDs of items in this cluster
+            cluster_item_ids = [item_id for item_id, label in item_to_subtopic.items() if label == subtopic]
+            
+            # Assign group ID to these items
+            df.loc[df['id'].isin(cluster_item_ids), 'group'] = new_group_id
+            created_groups.append(new_group_id)
+            
+            print(f"✅ Created group {new_group_id} with {len(cluster_item_ids)} items (similarity: {avg_similarity:.3f})")
+        else:
+            print(f"⚠️ Rejected cluster {subtopic} due to low similarity: {avg_similarity:.3f} < {SIMILARITY_THRESHOLD}")
+            # Items in rejected clusters will keep their original group
+            # They'll be handled by the main function if no groups were created
+    
+    return created_groups
+
+def _generate_base_id(df, base_group_id, num_subgroups):
+    """Generate a consistent base ID for subgroups"""
+    base_id = 7777777
+    try:
+        base_group_id_int = int(base_group_id)
+        # Convert to string to get the first digits
+        base_group_str = str(base_group_id_int)
+        
+        # If base_group_id has more than 7 digits already, use it as is
+        if len(base_group_str) >= 7:
+            base_id = base_group_id_int
+        else:
+            # Take the first digits and append zeros to get a 7-digit number
+            # For example: 42 -> 4200000, 123 -> 1230000
+            first_digits = base_group_str
+            zeros_needed = 7 - len(first_digits)
+            base_id = int(first_digits + '0' * zeros_needed)
+    except (ValueError, TypeError):
+        # Fallback if base_group_id can't be converted to int
+        base_id = 7777777
+        print(f"⚠️ Could not derive base_id from {base_group_id}, using default {base_id}")
+    
+    # Check if any existing groups already use IDs in this range
+    target_range_end = base_id + num_subgroups
+    if 'group' in df.columns and not df['group'].dropna().empty:
+        # Convert to numeric, ignoring errors
+        numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
+        
+        # Check for conflicts in the range we want to use
+        conflicting_ids = numeric_groups[(numeric_groups >= base_id) & (numeric_groups < target_range_end)]
+        if not conflicting_ids.empty:
+            # If there's a conflict, find a new base_id
+            base_id = max(base_id, int(conflicting_ids.max()) + 1)
+            print(f"⚠️ ID conflict detected. Using new base_id: {base_id}")
+    
+    return base_id
 
 def _subdivide_group_with_firestore(df, new_items, group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, db_cluster_id):
     """
@@ -580,7 +644,6 @@ def _subdivide_group_with_firestore(df, new_items, group_id, MAX_GROUP_SIZE, MIN
         traceback.print_exc()  # Print the full traceback to help with debugging
         # Fall back to not subdividing
         df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = group_id
-
 
 def process_results(df, has_reference_news=False):
     """
