@@ -182,7 +182,7 @@ def neutralize_and_more(news_groups, batch_size=5):
                         neutralized_groups.append(group)
                         neutralized_count += 1
                     
-                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result, sources_to_unassign)
+                    result = update_news_with_neutral_scores(sources, result, sources_to_unassign)
                     if result:
                         a, b = result
                         updated_neutral_scores_count += a

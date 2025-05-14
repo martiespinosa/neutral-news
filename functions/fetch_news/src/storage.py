@@ -594,3 +594,56 @@ def update_news_embedding(news_ids, embeddings):
             print("Skipping commit for an empty batch.")
             
     return updated_count
+
+def get_group_item_count(group_id):
+    """
+    Get the count of news items assigned to a specific group in Firestore
+    
+    Args:
+        group_id: The group ID to count items for
+        
+    Returns:
+        int: The number of news items in the specified group
+    """
+    try:
+        db = initialize_firebase()
+        news_ref = db.collection('news')
+        
+        # Query for documents with this group ID and count them
+        query = news_ref.where('group', '==', group_id)
+        count = len(list(query.stream()))
+        
+        return count
+    except Exception as e:
+        print(f"Error counting items in group {group_id}: {str(e)}")
+        return 0
+
+def get_group_items(group_id):
+    """
+    Get all news items assigned to a specific group from Firestore
+    
+    Args:
+        group_id: The group ID to get items for
+        
+    Returns:
+        list: List of dictionaries containing news items
+    """
+    try:
+        db = initialize_firebase()
+        news_ref = db.collection('news')
+        
+        # Query for documents with this group ID
+        query = news_ref.where('group', '==', group_id)
+        docs = list(query.stream())
+        
+        # Convert to list of dictionaries with embeddings
+        items = []
+        for doc in docs:
+            item = doc.to_dict()
+            item['id'] = doc.id
+            items.append(item)
+            
+        return items
+    except Exception as e:
+        print(f"Error retrieving items in group {group_id}: {str(e)}")
+        return []

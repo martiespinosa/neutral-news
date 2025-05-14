@@ -1,6 +1,6 @@
 import os
 import traceback
-from .storage import update_news_embedding
+from .storage import update_news_embedding, get_group_item_count, get_group_items
 import pandas as pd
 import numpy as np
 
@@ -326,22 +326,40 @@ def _process_cluster_with_references(df, cluster_items, db_cluster_id,
     reference_items = cluster_items[cluster_items['is_reference'] == True]
     
     if reference_items.empty:
-        # No reference items - assign a new group ID
+        # No reference items - check if subdivision is needed first
         next_group_id = _get_next_available_group_id(df)
-        df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
-        print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
         
-        # Check if we need to subdivide this new group
         if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
+            # Large enough for subdivision - directly create subgroups
             _subdivide_group(df, cluster_items, next_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+            print(f"ℹ️ DBSCAN cluster {db_cluster_id} was subdivided based on new group ID {next_group_id}")
+        else:
+            # Not large enough for subdivision - assign single group ID
+            df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+            print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
     else:
         # We have reference items - determine which group to use
         group_counts = reference_items['existing_group'].value_counts()
         target_group = group_counts.idxmax()  # Most common reference group
         
-        # Check if subdivision is needed based on size
-        if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
-            _subdivide_group(df, cluster_items, target_group, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+        # Get the total count of items in this target group from Firestore
+        # This includes items not in our current dataframe
+        total_items_in_group_from_db = get_group_item_count(target_group)
+        
+        # Count new non-reference items we're going to add
+        new_non_reference_items = len(cluster_items[~cluster_items['is_reference']])
+        
+        # Calculate total items after assignment
+        total_items_after_assignment = total_items_in_group_from_db + new_non_reference_items
+        print(f"ℹ️ Target group {target_group} has {total_items_in_group_from_db} existing items in database")
+        
+        # Check if subdivision is needed based on total size
+        if total_items_after_assignment > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
+            print(f"ℹ️ Target group {target_group} would have {total_items_after_assignment} items after assignment, exceeding limit of {MAX_GROUP_SIZE}")
+            
+            # For subdivision, we need to get all existing items in this group
+            # We'll handle this in the _subdivide_group function
+            _subdivide_group_with_firestore(df, cluster_items, target_group, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, db_cluster_id)
         else:
             # Check if we should create a new group based on similarity
             similarity = _calculate_group_similarity(cluster_items)
@@ -362,14 +380,13 @@ def _process_cluster_with_references(df, cluster_items, db_cluster_id,
 def _process_cluster_without_references(df, cluster_items, db_cluster_id, 
                                        MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE):
     """Process a cluster when there are no reference news items."""
+        # Check if we need to subdivide this group
     next_group_id = _get_next_available_group_id(df)
-    df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
-    print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
-
-    # Check if we need to subdivide this group
     if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
         _subdivide_group(df, cluster_items, next_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
-
+    else: 
+        df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+        print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
 
 def _get_next_available_group_id(df):
     """Calculate the next available group ID."""
@@ -502,6 +519,60 @@ def _subdivide_group(df, items, base_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_S
     except Exception as e:
         print(f"⚠️ Error in group subdivision: {str(e)}")
         # Fall back to not subdividing
+
+def _subdivide_group_with_firestore(df, new_items, group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, db_cluster_id):
+    """
+    Subdivide a group that includes items from Firestore and items in the current dataframe
+    
+    Args:
+        df: The current dataframe
+        new_items: New items to be added to the group
+        group_id: The target group ID
+        MAX_GROUP_SIZE: Maximum allowed group size
+        MIN_SUBDIVISION_SIZE: Minimum size for subdivision
+        db_cluster_id: The ID of the database cluster
+    """
+    try:
+        # Get existing items from Firestore
+        existing_items = get_group_items(group_id)
+        print(f"ℹ️ Retrieved {len(existing_items)} existing items from group {group_id} in Firestore")
+        
+        # Convert to DataFrame with the same structure as our working dataframe
+        if existing_items:
+            existing_df = pd.DataFrame(existing_items)
+            
+            # Mark all items from Firestore as "reference news" since they're already grouped
+            # This ensures they're treated correctly during the subdivision process
+            existing_df['is_reference'] = True
+            
+            # Create a combined DataFrame of both existing and new items
+            # Include non-reference items from new_items for subdivision
+            new_non_reference_items = new_items[~new_items['is_reference']]
+            
+            # Also add the reference items but mark them as reference
+            # This ensures they're included in the clustering but maintain their status
+            new_reference_items = new_items[new_items['is_reference']].copy()
+            
+            # Combine all items
+            combined_items = pd.concat([existing_df, new_non_reference_items, new_reference_items], ignore_index=True)
+        else:
+            # If no existing items, just use the new items
+            combined_items = new_items.copy()
+        
+        # Now proceed with subdivision on the combined items
+        if len(combined_items) > MIN_SUBDIVISION_SIZE:
+            _subdivide_group(df, combined_items, group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+            print(f"ℹ️ Subdivided group {group_id} with items from Firestore and current batch")
+        else:
+            # Not enough items for subdivision after all, just assign to the group
+            df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = group_id
+            print(f"ℹ️ Not enough items for subdivision after combining with existing. Assigned to group {group_id}")
+            
+    except Exception as e:
+        print(f"⚠️ Error in Firestore-based group subdivision: {str(e)}")
+        traceback.print_exc()  # Print the full traceback to help with debugging
+        # Fall back to not subdividing
+        df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = group_id
 
 
 def process_results(df, has_reference_news=False):
