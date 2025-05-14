@@ -31,7 +31,7 @@ struct NewsView: View {
                             Image(uiImage: uiImage)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(height: 30)
+                                .frame(height: 36)
                         } else {
                             Text(news.sourceMedium.pressMedia.name)
                                 .font(.title)
