@@ -102,6 +102,7 @@ def neutralize_and_more(news_groups, batch_size=5):
         updated_groups = []
         
         updated_neutral_scores_count = 0
+        updated_neutral_scores_news = []
         
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
@@ -143,7 +144,11 @@ def neutralize_and_more(news_groups, batch_size=5):
                         updated_count += 1
                         updated_groups.append(group)
                     # Actualizar las noticias originales con su puntuación de neutralidad
-                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
+                    result = update_news_with_neutral_scores(sources, result, sources_to_unassign)
+                    if result:
+                        a, b = result
+                        updated_neutral_scores_count += a
+                        updated_neutral_scores_news.extend(b)
 
         print(f"ℹ️ Creating neutralization for {len(groups_to_neutralize)} groups")
         for i in range(0, len(groups_to_neutralize), batch_size):
@@ -177,11 +182,17 @@ def neutralize_and_more(news_groups, batch_size=5):
                         neutralized_groups.append(group)
                         neutralized_count += 1
                     
-                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result)
+                    updated_neutral_scores_count += update_news_with_neutral_scores(sources, result, sources_to_unassign)
+                    if result:
+                        a, b = result
+                        updated_neutral_scores_count += a
+                        updated_neutral_scores_news.extend(b)
+                        
                     
         print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
         print(f"Groups updated with new neutralization: {updated_groups}")
+        print(f"Updated neutral scores for news: {updated_neutral_scores_news}")
         return neutralized_count + updated_count
 
     except Exception as e:
@@ -294,7 +305,7 @@ def generate_neutral_analysis_batch(group_batch, is_update):
                 
                 # Update overridden sources to remove group assignment instead of deleting them
                 if sources_to_delete:
-                    print(f"🔄 Updating {len(sources_to_delete)} overridden news items to remove group assignment")
+                    #print(f"🔄 Updating {len(sources_to_delete)} overridden news items to remove group assignment")
                     db = initialize_firebase()
                     for source in sources_to_delete:
                         source_id = source.get('id')
@@ -317,13 +328,13 @@ def generate_neutral_analysis_batch(group_batch, is_update):
                                 if str(group_id) not in group_dict:
                                     group_dict[str(group_id)] = []
                                 group_dict[str(group_id)].append(source_id)
-                                print(f"  Updated news item {source_id} from {source.get('source_medium')} and unassigned group {group_id}")
+                                #print(f"  Updated news item {source_id} from {source.get('source_medium')} and unassigned group {group_id}")
                             except Exception as e:
                                 print(f"  Failed to update news item {source_id}: {str(e)}")
                 
                 # Reemplazar valid_sources con la lista desduplicada
                 valid_sources = list(sources_by_medium.values())
-                print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources")
+                print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources for group {group_id}")
                 
                 # Aplicar el límite de fuentes después de la desduplicación
                 if len(valid_sources) > SOURCES_LIMIT:

@@ -186,7 +186,7 @@ def update_groups_in_firestore(groups_data: list, news_docs: dict) -> tuple:
     
     return updated_count, created_count, updated_groups, created_groups
 
-def update_news_with_neutral_scores(sources, neutralization_result):
+def update_news_with_neutral_scores(sources, neutralization_result, sources_to_unassign=None):
     """
     Actualiza las noticias originales con sus puntuaciones de neutralidad.
     """
@@ -194,6 +194,7 @@ def update_news_with_neutral_scores(sources, neutralization_result):
         db = initialize_firebase()
         batch = db.batch()
         updated_count = 0
+        updated_news_ids = set()
         
         source_ratings = neutralization_result.get("source_ratings", [])
         for rating in source_ratings:
@@ -206,14 +207,21 @@ def update_news_with_neutral_scores(sources, neutralization_result):
                     news_id = source.get("id")
                     if news_id:
                         news_ref = db.collection('news').document(news_id)
-                        batch.update(news_ref, {"neutral_score": neutral_score, "updated_at": datetime.now()})
-                        updated_count += 1
+                        if (news_ref.document_id not in sources_to_unassign) and (news_ref.exists):
+                            # Actualizar la puntuación de neutralidad
+                            news_data = news_ref.get().to_dict()
+                            if news_data:
+                                # Solo actualizar si la puntuación es diferente
+                                if news_data.get("neutral_score") != neutral_score:
+                                    batch.update(news_ref, {"neutral_score": neutral_score, "updated_at": datetime.now()})
+                                    updated_count += 1
+                                    updated_news_ids.add(news_id)
         
         # Commit the batch
         if updated_count > 0:
             batch.commit()
         
-        return updated_count
+        return updated_count, updated_news_ids
         
     except Exception as e:
         print(f"Error in update_news_with_neutral_scores: {str(e)}")
