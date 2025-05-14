@@ -256,7 +256,7 @@ def perform_clustering(all_items_for_clustering_df, embeddings_norm, df, has_ref
     dist_matrix_sparse_sorted = sort_graph_by_row_values(dist_matrix_sparse)
     
     print("ℹ️ Applying DBSCAN algorithm...")
-    eps = 0.25
+    eps = 0.275
     min_samples = 2
     
     clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
