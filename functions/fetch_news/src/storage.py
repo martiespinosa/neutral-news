@@ -330,6 +330,8 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
             neutralization_result.get("source_ratings", [])
         )
         
+        oldest_pub_date = get_oldest_pub_date(source_ids, db)
+        
         neutral_news_ref = db.collection('neutral_news').document(str(group))
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
@@ -339,6 +341,7 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
             "category": neutralization_result.get("category"),
             "relevance": neutralization_result.get("relevance"),
             "updated_at": datetime.now(),
+            "date": oldest_pub_date,
             "image_url": image_url,
             "image_medium": image_medium,
             "source_ids": source_ids,
@@ -436,8 +439,12 @@ def get_oldest_pub_date(source_ids, db):
     """
     Obtiene la fecha de publicación más antigua de una lista de IDs de noticias.
     Maneja múltiples formatos de fecha comunes en feeds RSS.
+    Asegura que la fecha no sea más antigua que 3 días.
     """
     pub_dates = []
+    cutoff_date = datetime.now() - timedelta(days=3)
+    batch = db.batch()
+    batch_count = 0
     
     # Lista de formatos de fecha posibles
     date_formats = [
@@ -456,6 +463,7 @@ def get_oldest_pub_date(source_ids, db):
         if doc.exists:
             data = doc.to_dict()
             pub_date_str = data.get("pub_date")
+            created_at = data.get("created_at")
             
             if pub_date_str:
                 parsed = False
@@ -470,6 +478,22 @@ def get_oldest_pub_date(source_ids, db):
                                     break
                         
                         pub_date = datetime.strptime(cleaned_date_str, date_format)
+                        
+                        # Check if the date is older than our cutoff
+                        if pub_date < cutoff_date:
+                            # Use created_at if available, otherwise use current date
+                            if created_at:
+                                pub_date = created_at
+                                # Update the document with created_at as pub_date
+                                batch.update(doc.reference, {"pub_date": created_at})
+                                batch_count += 1
+                                if batch_count >= 450:
+                                    batch.commit()
+                                    batch = db.batch()
+                                    batch_count = 0
+                            else:
+                                pub_date = datetime.now()
+                        
                         pub_dates.append(pub_date)
                         parsed = True
                         break
@@ -478,6 +502,15 @@ def get_oldest_pub_date(source_ids, db):
                 
                 if not parsed:
                     print(f"No se pudo parsear la fecha: {pub_date_str}")
+                    # If we can't parse the date, use created_at or current time
+                    if created_at:
+                        pub_dates.append(created_at)
+                    else:
+                        pub_dates.append(datetime.now())
+    
+    # Commit any remaining updates
+    if batch_count > 0:
+        batch.commit()
     
     return min(pub_dates) if pub_dates else datetime.now()
 
