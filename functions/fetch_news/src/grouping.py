@@ -6,7 +6,6 @@ from .storage import update_news_embedding
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-# Define a global model variable
 _model = None
 _nlp_modules_loaded = False
 
@@ -275,156 +274,237 @@ def perform_clustering(all_items_for_clustering_df, embeddings_norm, df, has_ref
     return True
 def assign_group_ids(df, has_reference_news):
     """
-    Assign final group IDs based on DBSCAN clusters and reference groups
+    Assign final group IDs based on DBSCAN clusters and reference groups.
+    Ensures no group exceeds MAX_GROUP_SIZE by subdividing when necessary.
     """
-    # Define large groups that need update reduction
-    large_groups = [3, 6]
-    
-    # Set a time threshold for large groups (e.g., 24 hours)
-    time_threshold = datetime.now() - timedelta(hours=24)
-    
-    # Track groups that have been assigned in this run to avoid duplicates
-    groups_used_this_run = set()
+    # Configuration constants
+    MAX_GROUP_SIZE = 25  # Maximum number of news items per group
     MIN_SUBDIVISION_SIZE = 5  # Minimum cluster size needed for subdivision
+    SIMILARITY_THRESHOLD = 0.85  # Higher threshold for stricter clustering
     
+    # Track assigned groups to avoid duplicates
+    assigned_groups = set()
+    
+    # Handle DBSCAN outliers first
     if has_reference_news:
-        print("ℹ️ Mapping new DBSCAN clusters to existing reference groups...")
-        for new_db_group_id in df['temp_group'].dropna().unique():
-            # Skip outliers
-            if new_db_group_id == -1:
-                df.loc[(df['temp_group'] == -1) & (df['existing_group'].isna()), 'group'] = None
-                continue
-
-            current_items = df[df['temp_group'] == new_db_group_id]
-            reference_items = current_items[current_items['is_reference'] == True]
-            
-            if not reference_items.empty:
-                group_counts = reference_items['existing_group'].value_counts()
-                most_common_group = group_counts.idxmax()
-                
-                # Calculate max group ID to use for new groups if needed
-                max_existing_group = df['existing_group'].dropna().max() if not df['existing_group'].dropna().empty else 0
-                # Only consider numeric groups for max calculation to prevent type errors
-                numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
-                max_assigned_new_group = numeric_groups.max() if not numeric_groups.empty else 0
-                next_new_group_id = max(max_existing_group, max_assigned_new_group) + 1
-                
-                # STRATEGY 1: Try to find alternative groups for large groups
-                if most_common_group in large_groups:
-                    # Look for alternative groups that aren't in large_groups
-                    alternative_found = False
-                    
-                    # First check if this cluster has enough items for subdivision
-                    has_enough_for_subdivision = len(current_items) > MIN_SUBDIVISION_SIZE
-                    
-                    # Only look for alternatives if not enough items for subdivision
-                    if not has_enough_for_subdivision and len(group_counts) > 1:
-                        # Sort by count descending (but exclude large groups)
-                        for group_id, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
-                            if group_id not in large_groups:
-                                target_existing_group = group_id
-                                print(f"ℹ️ Using alternative group {target_existing_group} instead of large group {most_common_group}")
-                                alternative_found = True
-                                break
-                    
-                    # STRATEGY 2: If no alternative, check similarity threshold
-                    if not alternative_found:
-                        # Calculate average similarity within the cluster
-                        texts = current_items['title'] + " " + current_items['scraped_description']
-                        embeddings = np.array([np.array(emb) if isinstance(emb, list) else emb 
-                                           for emb in current_items['embedding'].values if emb is not None])
-                        
-                        # For subdivision candidates, use a lower threshold to prefer subdivision
-                        similarity_threshold = 0.8 if has_enough_for_subdivision else 0.9
-                        
-                        if len(embeddings) >= 2:
-                            # Calculate pairwise similarities
-                            similarities = []
-                            for i in range(len(embeddings)):
-                                for j in range(i+1, len(embeddings)):
-                                    sim = np.dot(embeddings[i], embeddings[j])
-                                    similarities.append(sim)
-                            
-                            avg_similarity = sum(similarities) / len(similarities) if similarities else 0
-                            
-                            # If enough items for subdivision, always assign to large group
-                            if has_enough_for_subdivision or avg_similarity > similarity_threshold:
-                                target_existing_group = most_common_group
-                                print(f"ℹ️ {'Cluster large enough for subdivision' if has_enough_for_subdivision else 'High similarity'} - assigning to large group {most_common_group}")
-                            else:
-                                # Create new group instead
-                                target_existing_group = next_new_group_id
-                                print(f"ℹ️ Low similarity ({avg_similarity:.3f}) - creating new group {next_new_group_id}")
-                        else:
-                            # Not enough embeddings to calculate similarity, use default assignment
-                            print(f"⚠️ Not enough embeddings to calculate similarity for group {most_common_group}. Assigning to new group {next_new_group_id}")
-                            target_existing_group = next_new_group_id
-                    else:
-                        # We found an alternative group already
-                        pass
-                        
-                    # STRATEGY 3: Consider sub-clustering for large groups with enough items
-                    if target_existing_group in large_groups and len(current_items) > MIN_SUBDIVISION_SIZE:
-                        try:
-                            # Extract embeddings for topic modeling
-                            embeddings_for_topics = np.array([np.array(emb) if isinstance(emb, list) else emb 
-                                                         for emb in current_items['embedding'].values if emb is not None])
-                            
-                            if len(embeddings_for_topics) > MIN_SUBDIVISION_SIZE: # Ensure enough items for sub-clustering
-                                # Use K-means for sub-clustering (a simple topic modeling approach)
-                                from sklearn.cluster import KMeans
-                                num_topics = min(3, len(embeddings_for_topics) // 2)  # Reasonable number of sub-topics
-                                
-                                if num_topics >= 2:
-                                    kmeans = KMeans(n_clusters=num_topics, random_state=42)
-                                    subtopic_labels = kmeans.fit_predict(embeddings_for_topics)
-                                    
-                                    # Create mapping of item_id to subtopic
-                                    item_to_subtopic = {item_id: subtopic for item_id, subtopic in 
-                                                      zip(current_items['id'].values, subtopic_labels)}
-                                    
-                                    # FIXED: Use integer subgroups instead of hierarchical strings
-                                    target_group_base = int(target_existing_group)
-                                    # Create new groups for each subtopic
-                                    for item_id, subtopic in item_to_subtopic.items():
-                                        new_group_id = next_new_group_id + subtopic
-                                        df.loc[df['id'] == item_id, 'group'] = new_group_id
-                                    
-                                    print(f"ℹ️ Subdivided large group {target_existing_group} into {num_topics} separate groups: {sorted(item_to_subtopic.values())}")
-                                    continue  # Skip the regular assignment below
-                        except Exception as e:
-                            print(f"⚠️ Error in topic modeling: {str(e)}")
-                            # Fall back to regular assignment
-                else:
-                    # Not a large group, use normal assignment
-                    target_existing_group = most_common_group
-                    
-                # Regular assignment for cases not handled by strategies above
-                df.loc[(df['temp_group'] == new_db_group_id) & (df['group'].isna()), 'group'] = target_existing_group
-                print(f"ℹ️ Assigned DBSCAN group {new_db_group_id} to existing group {target_existing_group}.")
-                
-                # Track that we've used this group
-                groups_used_this_run.add(target_existing_group)
-            else:
-                # Assign new unique group ID for clusters without reference items
-                max_existing_group = df['existing_group'].dropna().max() if not df['existing_group'].dropna().empty else -1
-                # Only consider numeric groups to avoid type errors
-                numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
-                max_assigned_new_group = numeric_groups.max() if not numeric_groups.empty else -1
-                next_new_group_id = max(max_existing_group, max_assigned_new_group) + 1
-                df.loc[(df['temp_group'] == new_db_group_id) & (df['group'].isna()), 'group'] = next_new_group_id
-                print(f"ℹ️ Assigned DBSCAN group {new_db_group_id} to new group {next_new_group_id}.")
+        df.loc[(df['temp_group'] == -1) & (df['existing_group'].isna()), 'group'] = None
     else:
-        print("ℹ️ No reference news. Assigning DBSCAN groups directly.")
-        df.loc[df['group'].isna(), 'group'] = df['temp_group']
-        df.loc[df['group'] == -1, 'group'] = None
-
-    # Ensure reference items keep original groups
+        df.loc[df['temp_group'] == -1, 'group'] = None
+        
+    # Process each DBSCAN cluster
+    for db_cluster_id in df['temp_group'].dropna().unique():
+        if db_cluster_id == -1:  # Skip outliers (already handled)
+            continue
+            
+        # Get all items in this cluster
+        cluster_items = df[df['temp_group'] == db_cluster_id]
+        
+        # Skip empty clusters (shouldn't happen but just in case)
+        if cluster_items.empty:
+            continue
+            
+        # Process with or without reference news
+        if has_reference_news:
+            _process_cluster_with_references(df, cluster_items, db_cluster_id, 
+                                            MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, 
+                                            SIMILARITY_THRESHOLD, assigned_groups)
+        else:
+            _process_cluster_without_references(df, cluster_items, db_cluster_id, 
+                                              MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+    
+    # Ensure reference items keep their original groups
     if has_reference_news:
         df.loc[df['is_reference'] == True, 'group'] = df['existing_group']
-
-    # Clean up temp column
+        
+    # Clean up temporary column
     df.drop(columns=['temp_group'], inplace=True, errors='ignore')
+
+
+def _process_cluster_with_references(df, cluster_items, db_cluster_id, 
+                                    MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, 
+                                    SIMILARITY_THRESHOLD, assigned_groups):
+    """Process a cluster that has reference news items."""
+    # Find reference items in this cluster
+    reference_items = cluster_items[cluster_items['is_reference'] == True]
+    
+    if reference_items.empty:
+        # No reference items - assign a new group ID
+        next_group_id = _get_next_available_group_id(df)
+        df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+        print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
+        
+        # Check if we need to subdivide this new group
+        if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
+            _subdivide_group(df, cluster_items, next_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+    else:
+        # We have reference items - determine which group to use
+        group_counts = reference_items['existing_group'].value_counts()
+        target_group = group_counts.idxmax()  # Most common reference group
+        
+        # Check if subdivision is needed based on size
+        if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
+            _subdivide_group(df, cluster_items, target_group, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+        else:
+            # Check if we should create a new group based on similarity
+            similarity = _calculate_group_similarity(cluster_items)
+            
+            if similarity < SIMILARITY_THRESHOLD:
+                # Low similarity - create a new group
+                next_group_id = _get_next_available_group_id(df)
+                df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+                print(f"ℹ️ Low similarity ({similarity:.3f}) - created new group {next_group_id}")
+            else:
+                # High similarity - assign to target group
+                df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = target_group
+                print(f"ℹ️ High similarity ({similarity:.3f}) - assigned to group {target_group}")
+                
+        assigned_groups.add(target_group)
+
+
+def _process_cluster_without_references(df, cluster_items, db_cluster_id, 
+                                       MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE):
+    """Process a cluster when there are no reference news items."""
+    next_group_id = _get_next_available_group_id(df)
+    df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
+    print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
+
+    # Check if we need to subdivide this group
+    if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
+        _subdivide_group(df, cluster_items, next_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
+
+
+def _get_next_available_group_id(df):
+    """Calculate the next available group ID."""
+    # Get maximum existing group ID
+    max_existing_group = 0
+    if 'existing_group' in df.columns and not df['existing_group'].dropna().empty:
+        # Filter to only numeric values
+        numeric_existing = pd.to_numeric(df['existing_group'].dropna(), errors='coerce').dropna()
+        if not numeric_existing.empty:
+            max_existing_group = numeric_existing.max()
+    
+    # Get maximum assigned new group ID
+    max_assigned_group = 0
+    if 'group' in df.columns and not df['group'].dropna().empty:
+        # Filter to only numeric values
+        numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
+        if not numeric_groups.empty:
+            max_assigned_group = numeric_groups.max()
+    
+    # Return next available ID
+    return max(int(max_existing_group), int(max_assigned_group)) + 1
+
+
+def _calculate_group_similarity(items):
+    """Calculate average cosine similarity between all embeddings in a group."""
+    # Extract embeddings
+    embeddings = np.array([
+        np.array(emb) if isinstance(emb, list) else emb 
+        for emb in items['embedding'].values 
+        if emb is not None
+    ])
+    
+    # If we don't have at least two embeddings, return default value
+    if len(embeddings) < 2:
+        return 0.5  # Default middle value
+        
+    # Calculate pairwise similarities
+    similarities = []
+    for i in range(len(embeddings)):
+        for j in range(i+1, len(embeddings)):
+            sim = np.dot(embeddings[i], embeddings[j])
+            similarities.append(sim)
+    
+    # Return average similarity
+    return sum(similarities) / len(similarities) if similarities else 0.5
+
+
+def _subdivide_group(df, items, base_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE):
+    """Subdivide a large group into smaller groups using K-means clustering."""
+    try:
+        # Extract embeddings
+        embeddings = np.array([
+            np.array(emb) if isinstance(emb, list) else emb 
+            for emb in items['embedding'].values 
+            if emb is not None
+        ])
+        
+        if len(embeddings) < MIN_SUBDIVISION_SIZE:
+            print(f"⚠️ Not enough valid embeddings to subdivide group {base_group_id}")
+            return
+        
+        # Import K-means
+        from sklearn.cluster import KMeans
+        
+        # Calculate number of subgroups needed
+        # Aim for groups of ~8 items each, with at least 2 groups
+        target_size = 8
+        num_subgroups = max(2, len(items) // target_size)
+        
+        # Limit to a reasonable number
+        num_subgroups = min(num_subgroups, 5)
+        
+        # Perform K-means clustering
+        kmeans = KMeans(n_clusters=num_subgroups, random_state=42)
+        subtopic_labels = kmeans.fit_predict(embeddings)
+        
+        # Create mapping from item ID to subtopic
+        item_to_subtopic = {
+            item_id: int(subtopic) 
+            for item_id, subtopic in zip(items['id'].values, subtopic_labels)
+        }
+        
+        # Use 7-digit IDs derived from the base_group_id
+        # Convert base_group_id to int to ensure numeric operations work
+        base_id = 7777777
+        try:
+            base_group_id_int = int(base_group_id)
+            # Convert to string to get the first digits
+            base_group_str = str(base_group_id_int)
+            
+            # If base_group_id has more than 7 digits already, use it as is
+            if len(base_group_str) >= 7:
+                base_id = base_group_id_int
+            else:
+                # Take the first digits and append zeros to get a 7-digit number
+                # For example: 42 -> 4200000, 123 -> 1230000
+                first_digits = base_group_str
+                zeros_needed = 7 - len(first_digits)
+                base_id = int(first_digits + '0' * zeros_needed)
+        except (ValueError, TypeError):
+            # Fallback if base_group_id can't be converted to int
+            base_id = 7777777
+            print(f"⚠️ Could not derive base_id from {base_group_id}, using default {base_id}")
+        
+        # Check if any existing groups already use IDs in this range
+        target_range_end = base_id + num_subgroups
+        if 'group' in df.columns and not df['group'].dropna().empty:
+            # Convert to numeric, ignoring errors
+            numeric_groups = pd.to_numeric(df['group'].dropna(), errors='coerce').dropna()
+            
+            # Check for conflicts in the range we want to use
+            conflicting_ids = numeric_groups[(numeric_groups >= base_id) & (numeric_groups < target_range_end)]
+            if not conflicting_ids.empty:
+                # If there's a conflict, find a new base_id
+                base_id = max(base_id, int(conflicting_ids.max()) + 1)
+                print(f"⚠️ ID conflict detected. Using new base_id: {base_id}")
+        
+        # Assign new group IDs
+        for item_id, subtopic in item_to_subtopic.items():
+            new_group_id = base_id + subtopic
+            df.loc[df['id'] == item_id, 'group'] = new_group_id
+        
+        print(f"ℹ️ Subdivided group {base_group_id} into {num_subgroups} smaller groups (IDs: {base_id}-{base_id + num_subgroups - 1})")
+        print(f"⚠️ Note: Original group {base_group_id} is now logically empty as all its items were moved to subgroups")
+        
+        # Note: The original group ID still exists in the system, but has no news items assigned to it.
+        # Updating the database to remove empty groups would be handled in a separate process
+        # if needed, not during the grouping phase.
+        
+    except Exception as e:
+        print(f"⚠️ Error in group subdivision: {str(e)}")
+        # Fall back to not subdividing
+
 
 def process_results(df, has_reference_news=False):
     """
