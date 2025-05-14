@@ -400,6 +400,9 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
         
+        # Ensure we're using a standard datetime object, not a DatetimeWithNanoseconds
+        current_time = datetime.now()
+        
         neutral_news_ref = db.collection('neutral_news').document(str(group))
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
@@ -408,15 +411,19 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
             "relevance": neutralization_result.get("relevance"),
-            "updated_at": datetime.now(),
-            "date": oldest_pub_date,
-            "image_url": image_url,
-            "image_medium": image_medium,
+            "updated_at": current_time,
             "source_ids": source_ids,
         }
 
+        # Only add these fields if they are valid
+        if isinstance(oldest_pub_date, datetime):
+            neutral_news_data["date"] = oldest_pub_date
+            
         if image_url:
             neutral_news_data["image_url"] = image_url
+            
+        if image_medium:
+            neutral_news_data["image_medium"] = image_medium
         
         neutral_news_ref.update(neutral_news_data)
         return True
@@ -515,50 +522,63 @@ def get_oldest_pub_date(source_ids, db):
     batch_count = 0
 
     for news_id in source_ids:
-        doc = db.collection("news").document(news_id).get()
-        if doc.exists:
-            data = doc.to_dict()
-            pub_date = data.get("pub_date")
-            created_at = data.get("created_at")
+        try:
+            doc = db.collection("news").document(news_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                pub_date = data.get("pub_date")
+                created_at = data.get("created_at")
 
-            # Use pub_date if it's a datetime, else fallback
-            if isinstance(pub_date, datetime):
-                # Remove tzinfo for comparison if present
-                if pub_date.tzinfo is not None:
-                    pub_date = pub_date.replace(tzinfo=None)
-            else:
-                pub_date = None
+                # Convert to standard datetime object if needed
+                if hasattr(pub_date, 'timestamp'):
+                    try:
+                        # Convert to standard datetime using timestamp
+                        pub_date = datetime.fromtimestamp(pub_date.timestamp())
+                    except (AttributeError, TypeError):
+                        pub_date = None
 
-            # Fallback to created_at if pub_date is missing or not a datetime
-            if pub_date is None and isinstance(created_at, datetime):
-                pub_date = created_at
-                if pub_date.tzinfo is not None:
-                    pub_date = pub_date.replace(tzinfo=None)
+                # Fallback to created_at if pub_date is missing or not a datetime
+                if pub_date is None and created_at is not None:
+                    if hasattr(created_at, 'timestamp'):
+                        try:
+                            created_at = datetime.fromtimestamp(created_at.timestamp())
+                        except (AttributeError, TypeError):
+                            created_at = None
+                    pub_date = created_at
 
-            # Fallback to now if still missing
-            if pub_date is None:
-                pub_date = datetime.now()
+                # Fallback to now if still missing
+                if pub_date is None or not isinstance(pub_date, datetime):
+                    pub_date = datetime.now()
 
-            # If pub_date is older than cutoff, use created_at or now, and update Firestore
-            if pub_date < cutoff_date:
-                if isinstance(created_at, datetime):
-                    fixed_date = created_at.replace(tzinfo=None) if created_at.tzinfo is not None else created_at
-                else:
+                # If pub_date is older than cutoff, use created_at or now, and update Firestore
+                if pub_date < cutoff_date:
                     fixed_date = datetime.now()
-                pub_dates.append(fixed_date)
-                # Update Firestore if needed
-                batch.update(doc.reference, {"pub_date": fixed_date})
-                batch_count += 1
-                if batch_count >= 450:
-                    batch.commit()
-                    batch = db.batch()
-                    batch_count = 0
-            else:
-                pub_dates.append(pub_date)
+                    if isinstance(created_at, datetime):
+                        fixed_date = created_at
+                    pub_dates.append(fixed_date)
+                    
+                    # Update Firestore if needed
+                    try:
+                        batch.update(doc.reference, {"pub_date": fixed_date})
+                        batch_count += 1
+                        if batch_count >= 450:
+                            batch.commit()
+                            batch = db.batch()
+                            batch_count = 0
+                    except Exception as e:
+                        print(f"Error updating pub_date for {news_id}: {str(e)}")
+                else:
+                    pub_dates.append(pub_date)
+        except Exception as e:
+            print(f"Error processing document {news_id}: {str(e)}")
+            continue
 
     # Commit any remaining updates
     if batch_count > 0:
-        batch.commit()
+        try:
+            batch.commit()
+        except Exception as e:
+            print(f"Error committing batch updates: {str(e)}")
 
     return min(pub_dates) if pub_dates else datetime.now()
 

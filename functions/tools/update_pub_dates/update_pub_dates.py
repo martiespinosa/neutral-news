@@ -145,8 +145,9 @@ def main():
             if pub_date is None:
                 continue
                 
-            # Skip if pub_date is already a Timestamp
-            if isinstance(pub_date, type(firestore.SERVER_TIMESTAMP)):
+            # Skip if pub_date is already a Timestamp (server timestamp or proper datetime)
+            if isinstance(pub_date, type(firestore.SERVER_TIMESTAMP)) or \
+               (hasattr(pub_date, 'timestamp') and callable(getattr(pub_date, 'timestamp'))):
                 continue
             
             # Check if pub_date is a string or another format that needs conversion
@@ -167,7 +168,7 @@ def main():
                                f"This operation will convert string dates to Firestore Timestamps.\n"
                                f"Proceed? (yes/no): ")
             
-            if confirmation.lower() not in ["yes"]:
+            if confirmation.lower() not in ["yes", "y"]:
                 print("Operation cancelled by user. No documents were updated.")
                 sys.exit(0)
             
