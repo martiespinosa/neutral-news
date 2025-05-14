@@ -196,6 +196,13 @@ def update_news_with_neutral_scores(sources, neutralization_result, sources_to_u
         updated_count = 0
         updated_news_ids = set()
         
+        # First, create a set of all source IDs that should be unassigned
+        sources_to_unassign_set = set()
+        if sources_to_unassign:
+            for group_id, source_ids in sources_to_unassign.items():
+                for source_id in source_ids:
+                    sources_to_unassign_set.add(source_id)
+        
         source_ratings = neutralization_result.get("source_ratings", [])
         for rating in source_ratings:
             source_medium = rating.get("source_medium")
@@ -205,11 +212,11 @@ def update_news_with_neutral_scores(sources, neutralization_result, sources_to_u
             for source in sources:
                 if source.get("source_medium") == source_medium:
                     news_id = source.get("id")
-                    if news_id:
+                    if news_id and news_id not in sources_to_unassign_set:
                         news_ref = db.collection('news').document(news_id)
-                        if (news_ref.document_id not in sources_to_unassign) and (news_ref.exists):
-                            # Actualizar la puntuación de neutralidad
-                            news_data = news_ref.get().to_dict()
+                        doc = news_ref.get()
+                        if doc.exists:
+                            news_data = doc.to_dict()
                             if news_data:
                                 # Solo actualizar si la puntuación es diferente
                                 if news_data.get("neutral_score") != neutral_score:
@@ -225,8 +232,8 @@ def update_news_with_neutral_scores(sources, neutralization_result, sources_to_u
         
     except Exception as e:
         print(f"Error in update_news_with_neutral_scores: {str(e)}")
-        return 0
-
+        return 0, set()
+        
 def load_all_news_links_from_medium(medium):
     """
     Carga todos los links de noticias de la colección 'news' en Firestore.
