@@ -594,22 +594,3 @@ def update_news_embedding(news_ids, embeddings):
             print("Skipping commit for an empty batch.")
             
     return updated_count
-def get_all_embeddings():
-    """
-    Get all embeddings from the 'news' collection
-    """
-    db = initialize_firebase()
-    
-    # Query for all news items
-    all_news_query = db.collection('news')
-    
-    # Get the documents
-    all_news_docs = list(all_news_query.stream())
-    
-    # Convert to a list of dictionaries
-    all_news = [doc.to_dict() for doc in all_news_docs]
-    
-    # Extract embeddings
-    embeddings = [news.get("embedding") for news in all_news if news.get("embedding") is not None]
-    
-    return embeddings

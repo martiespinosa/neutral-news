@@ -1,11 +1,9 @@
 import os
 import traceback
-import time
-from .storage import get_all_embeddings
 from .storage import update_news_embedding
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+
 _model = None
 _nlp_modules_loaded = False
 
@@ -636,6 +634,7 @@ def extract_titles_and_descriptions(df_embeddings):
             # If both are empty, it will result in an empty string for the description part.
     descriptions = desc1.where(desc1 != "", desc2)
     return titles,descriptions
+
 def get_news_not_embedded(input_df: pd.DataFrame) -> list:
     """
     Filters a DataFrame to get news items that do not have an 'embedding' field 
@@ -647,38 +646,22 @@ def get_news_not_embedded(input_df: pd.DataFrame) -> list:
     for index, row in input_df.iterrows():
         embedding_value = row.get("embedding") 
         
-        embedding_is_present_and_valid = False # Default to False
+        embedding_is_present_and_valid = False
 
         if isinstance(embedding_value, (list, np.ndarray)):
-            # It's a list or array, check if it's a valid, non-empty embedding
             if len(embedding_value) > 0:
                 if isinstance(embedding_value, np.ndarray) and np.all(pd.isna(embedding_value)):
-                    # It's an array of all NaNs, not valid
                     embedding_is_present_and_valid = False
                 else:
-                    # It's a non-empty list/array, not all NaNs
                     embedding_is_present_and_valid = True
-            # else: it's an empty list/array, so embedding_is_present_and_valid remains False
-        
-        # If it's not a list/array, then it's a scalar (or None)
-        # We only consider it "present and valid" if it passed the list/array checks above.
-        # If it's None, or a scalar NaN, or any other scalar type (string, number),
-        # it's not a valid embedding for our purposes here, so embedding_is_present_and_valid
-        # would have remained False from its initialization or the list/array checks.
 
         if not embedding_is_present_and_valid:
-            # This row needs an embedding because it's None, NaN, an empty list/array,
-            # an array of all NaNs, or some other non-list/array scalar.
             data_dict = row.to_dict()
 
-            # Ensure 'id' is present
             if "id" not in data_dict or pd.isna(data_dict.get("id")):
-                # print(f"Warning: Item at index {index} missing 'id'. Skipping.")
                 continue 
 
-            # Ensure 'scraped_description' or 'description' is present
             if pd.isna(data_dict.get("scraped_description")) and pd.isna(data_dict.get("description")):
-                # print(f"Warning: Item with ID {data_dict.get('id')} missing description. Skipping.")
                 continue
 
             news_needing_embedding.append(data_dict)
