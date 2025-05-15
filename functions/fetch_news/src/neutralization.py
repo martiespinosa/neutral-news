@@ -154,6 +154,9 @@ def neutralize_and_more(news_groups, batch_size=5):
         # OpenAI API can handle multiple concurrent requests - adjust based on your rate limits
         MAX_WORKERS = 50  # Starting higher - can be adjusted based on API behavior
         
+        skipped_update_count = 0
+        skipped_update_groups = []
+
         # Define a function to process a single group (either update or neutralize)
         def process_group(group_info, is_update=False):
             try:
@@ -168,27 +171,31 @@ def neutralize_and_more(news_groups, batch_size=5):
                     return {"success": False, "error": "API limit or quota exceeded", "group": group}
                 
                 # Unpack the response
+                skipped = False
                 if isinstance(response, tuple) and len(response) == 2:
                     result, sources_to_unassign = response
+                elif isinstance(response, tuple) and len(response) == 3:
+                    skipped = True
                 else:
                     result = response
                     sources_to_unassign = {}
                     
                 if not result:
                     return {"success": False, "error": "No result generated", "group": group}
-                
+                    
                 # Process the result based on whether this is an update or new neutralization
                 if is_update:
-                    success = update_existing_neutral_news(group, result, source_ids, sources_to_unassign)
+                    success = update_existing_neutral_news(group, result, source_ids, sources_to_unassign, skipped)
                 else:
                     success = store_neutral_news(group, result, source_ids, sources_to_unassign)
                     
-                # Update neutral scores for the source articles
-                scores_result = update_news_with_neutral_scores(sources, result, sources_to_unassign)
+                if not skipped:
+                    scores_result = update_news_with_neutral_scores(sources, result, sources_to_unassign)
                 
                 return {
                     "success": success,
                     "is_update": is_update,
+                    "skipped": skipped,
                     "group": group,
                     "scores_result": scores_result
                 }
@@ -219,13 +226,19 @@ def neutralize_and_more(news_groups, batch_size=5):
             for future in as_completed(update_futures):
                 result = future.result()
                 if result["success"]:
-                    updated_count += 1
-                    updated_groups.append(result["group"])
-                    
-                    if result.get("scores_result"):
-                        count, news_ids = result["scores_result"]
-                        updated_neutral_scores_count += count
-                        updated_neutral_scores_news.extend(news_ids)
+                    if result.get("skipped", False):
+                        # This was a skipped update
+                        skipped_update_count += 1
+                        skipped_update_groups.append(result["group"])
+                    else:
+                        # This was a completed update
+                        updated_count += 1
+                        updated_groups.append(result["group"])
+                        
+                        if result.get("scores_result"):
+                            count, news_ids = result["scores_result"]
+                            updated_neutral_scores_count += count
+                            updated_neutral_scores_news.extend(news_ids)
             
             # Process neutralization results as they complete
             for future in as_completed(neutralize_futures):
@@ -239,9 +252,10 @@ def neutralize_and_more(news_groups, batch_size=5):
                         updated_neutral_scores_count += count
                         updated_neutral_scores_news.extend(news_ids)
         
-        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, updated {updated_neutral_scores_count} regular news with neutral scores")
+        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, skipped {skipped_update_count} updates, updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
         print(f"Groups updated with new neutralization: {updated_groups}")
+        print(f"Groups with skipped updates: {skipped_update_groups}")
         print(f"Updated neutral scores for news: {updated_neutral_scores_news}")
         return neutralized_count + updated_count
 
@@ -424,7 +438,8 @@ def generate_neutral_analysis_single(group_info, is_update):
                             print(f"ℹ️ Marked {len(unused_sources)} sources for unassignment from group {group_id}")
                             
                         # Return existing data to avoid regeneration
-                        return existing_data, group_dict
+                        skipped = True
+                        return existing_data, group_dict, skipped
                     else:
                         print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{max(existing_count, current_count)} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
                         
