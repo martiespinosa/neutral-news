@@ -24,10 +24,10 @@ struct NeutralNews: Codable, Hashable, Identifiable {
     let neutralTitle: String
     let neutralDescription: String
     let category: String
-    let relevance: Int?
-    let imageUrl: String?
-    let imageMedium: String?
-    let date: Date?
+    let relevance: Int
+    let imageUrl: String
+    let imageMedium: String
+    let date: Date
     let createdAt: Date
     let updatedAt: Date
     var group: Int

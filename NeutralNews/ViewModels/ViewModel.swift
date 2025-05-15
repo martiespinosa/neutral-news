@@ -53,10 +53,10 @@ final class ViewModel: NSObject {
             }
         }
     }
-    var mediaFilter: Set<Media> = []
+    
     var categoryFilter: Set<Category> = []
     var isAnyFilterEnabled: Bool {
-        !mediaFilter.isEmpty || !categoryFilter.isEmpty
+        !categoryFilter.isEmpty
     }
     
     // MARK: - Data Collections
@@ -114,9 +114,8 @@ final class ViewModel: NSObject {
         let calendar = Calendar.current
         
         return neutralNews.filter { news in
-            guard let newsDate = news.date else { return false }
-            return calendar.isDate(newsDate, inSameDayAs: daySelected.date)
-        }.sorted { ($0.date ?? Date.distantPast) > ($1.date ?? Date.distantPast) }
+            return calendar.isDate(news.date, inSameDayAs: daySelected.date)
+        }.sorted { ($0.date) > ($1.date) }
     }
     
     // MARK: - Initialization
@@ -154,10 +153,10 @@ final class ViewModel: NSObject {
                 guard let neutralTitle = data["neutral_title"] as? String,
                       let neutralDescription = data["neutral_description"] as? String,
                       let category = data["category"] as? String,
-                      let relevance = data["relevance"] as? Int?,
-                      let imageUrl = data["image_url"] as? String?,
-                      let imageMedium = data["image_medium"] as? String?,
-                      let date = data["date"] as? Timestamp?,
+                      let relevance = data["relevance"] as? Int,
+                      let imageUrl = data["image_url"] as? String,
+                      let imageMedium = data["image_medium"] as? String,
+                      let date = data["date"] as? Timestamp,
                       let createdAt = data["created_at"] as? Timestamp,
                       let updatedAt = data["updated_at"] as? Timestamp,
                       let group = data["group"] as? Int
@@ -173,7 +172,7 @@ final class ViewModel: NSObject {
                     relevance: relevance,
                     imageUrl: imageUrl,
                     imageMedium: imageMedium,
-                    date: date?.dateValue(),
+                    date: date.dateValue(),
                     createdAt: createdAt.dateValue(),
                     updatedAt: updatedAt.dateValue(),
                     group: group
@@ -213,28 +212,29 @@ final class ViewModel: NSObject {
                 let data = doc.data()
                 guard let title = data["title"] as? String,
                       let description = data["description"] as? String,
-                      let group = data["group"] as? Int?,
-                      let category = data["category"] as? String?,
+                      let group = data["group"] as? Int,
+                      let category = data["category"] as? String,
                       let imageUrl = data["image_url"] as? String?,
                       let link = data["link"] as? String,
-                      let pubDate = data["pub_date"] as? String,
-                      let neutralScore = data["neutral_score"] as? Int?,
+                      let pubDate = data["pub_date"] as? Timestamp,
+                      let neutralScore = data["neutral_score"] as? Int,
                       let sourceMediumRaw = data["source_medium"] as? String,
                       let sourceMedium = Media(rawValue: sourceMediumRaw)
-                else {
-                    if let sourceMediumRaw = data["source_medium"] as? String {
-                        print("Error parsing news document from \(sourceMediumRaw)")
-                    }
+                else { return nil }
+                
+                // TODO: Arreglar El Mundo y Expansión?
+                let excludedMedia: Set<String> = ["El Mundo", "Expansión", "elMundo", "expansion"]
+                if excludedMedia.contains(sourceMediumRaw) {
                     return nil
                 }
                 
                 return News(
                     title: title,
                     description: description,
-                    category: category ?? "",
-                    imageUrl: imageUrl ?? "",
+                    category: category,
+                    imageUrl: imageUrl,
                     link: link,
-                    pubDate: pubDate,
+                    pubDate: pubDate.dateValue(),
                     sourceMedium: sourceMedium,
                     neutralScore: neutralScore,
                     group: group
@@ -258,7 +258,7 @@ final class ViewModel: NSObject {
     }
     
     func filterGroupedNews() {
-        let groupedNews = Dictionary(grouping: allNews.compactMap { $0.group != nil ? $0 : nil }, by: { $0.group! })
+        let groupedNews = Dictionary(grouping: allNews.compactMap { $0 }, by: { $0.group })
         let filteredGroups = groupedNews.filter { $0.value.count > 1 && $0.key != -1}
         
         let sortedGroups = filteredGroups.sorted { group1, group2 in
@@ -278,16 +278,11 @@ final class ViewModel: NSObject {
         components.minute = 0
         components.second = 0
         
-        guard let tomorrow = calendar.nextDate(after: Date(), matching: components, matchingPolicy: .nextTime) else {
-            print("Error calculando la próxima medianoche")
-            return
-        }
+        guard let tomorrow = calendar.nextDate(after: Date(), matching: components, matchingPolicy: .nextTime) else { return }
         
         let timeInterval = tomorrow.timeIntervalSince(Date())
-        print("Próximo cambio de día en \(Int(timeInterval)) segundos")
         
         Timer.scheduledTimer(withTimeInterval: timeInterval, repeats: false) { [weak self] _ in
-            print("¡Es medianoche! Actualizando clasificación de noticias...")
             self?.handleDayChange()
             self?.setupDayChangeTimer()
         }
@@ -330,11 +325,7 @@ final class ViewModel: NSObject {
         }
         
         for news in neutralNews {
-            guard let newsDate = news.date else {
-                continue
-            }
-            
-            guard let daysOfDifference = calendar.dateComponents([.day], from: newsDate, to: currentDate).day else {
+            guard let daysOfDifference = calendar.dateComponents([.day], from: news.date, to: currentDate).day else {
                 continue
             }
             
@@ -402,7 +393,7 @@ final class ViewModel: NSObject {
     func applyFilters() {
         var newsToFilter = daySelectedNews
         
-        if !mediaFilter.isEmpty || !categoryFilter.isEmpty {
+        if !categoryFilter.isEmpty {
             newsToFilter = newsToFilter.filter { news in
                 let matchesCategory = categoryFilter.isEmpty || categoryFilter.contains { category in
                     news.category.normalized() == category.rawValue.normalized()
@@ -434,9 +425,9 @@ final class ViewModel: NSObject {
             
             switch orderBy {
             case .hour:
-                return (news1.date ?? Date.distantPast) > (news2.date ?? Date.distantPast)
+                return (news1.date) > (news2.date)
             case .relevance:
-                return (news1.relevance ?? 0) > (news2.relevance ?? 0)
+                return (news1.relevance) > (news2.relevance)
             case .popularity:
                 return (getRelatedNews(from: news1).count) > (getRelatedNews(from: news2).count)
             }
@@ -444,7 +435,6 @@ final class ViewModel: NSObject {
     }
     
     func clearFilters() {
-        mediaFilter.removeAll()
         categoryFilter.removeAll()
         withAnimation {
             applyFilters()
@@ -458,6 +448,7 @@ final class ViewModel: NSObject {
 
 // MARK: - Authentication Extension
 extension ViewModel {
+    // TODO: Aun no está implementado, ¿implementarlo?
     func authenticateAnonymously() {
         Auth.auth().signInAnonymously { authResult, error in
             if let error = error {

@@ -18,9 +18,6 @@ struct NeutralNewsView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-//                LinearGradient(colors: [dominantColor, dominantColor.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom)
-//                    .ignoresSafeArea()
-                
                 dominantColor
                     .ignoresSafeArea()
                 
@@ -28,16 +25,19 @@ struct NeutralNewsView: View {
                     VStack {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {
-//                                Label("Noticia neutral", systemImage: "sparkles")
-//                                Spacer()
                                 Text(news.category.uppercased())
                                 Spacer()
-                                // TODO: Quitar el opcional cuando todas lo tengan
-                                if let date = news.date {
-                                    Text(date.formatted(.dateTime.day().month(.wide).hour().minute()).uppercased())
-                                }
+                                Text(news.date.formatted(
+                                    Date.FormatStyle.dateTime
+                                        .day()
+                                        .month(.wide)
+                                        .hour()
+                                        .minute()
+                                        .locale(Locale(identifier: "es_ES"))
+                                ).uppercased())
                             }
-                            .font(.footnote)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                             
                             Text(news.neutralTitle)
@@ -45,7 +45,7 @@ struct NeutralNewsView: View {
                                 .fontWeight(.semibold)
                                 .fontDesign(.serif)
                             
-                            AsyncImage(url: URL(string: news.imageUrl ?? "")) { phase in
+                            AsyncImage(url: URL(string: news.imageUrl)) { phase in
                                 VStack(alignment: .leading, spacing: 4) {
                                     switch phase {
                                     case .empty:
@@ -59,12 +59,10 @@ struct NeutralNewsView: View {
                                                 .scaledToFit()
                                                 .clipShape(.rect(cornerRadius: 16))
                                             
-                                            // TODO: Quitar el opcional cuando todas lo tengan
-                                            if let media = Media.from(news.imageMedium ?? "") {
-                                                Text("Imagen extraída de \(media.pressMedia.name), ver su noticia al final de la página.")
+                                            // TODO: Si el medio es El Mundo o Expansión, no hay su noticia abajo, arreglar
+                                            Text("Imagen extraída de \(Media.from(news.imageMedium)?.pressMedia.name ?? ""), ver su noticia al final de la página.")
                                                     .font(.footnote)
                                                     .foregroundColor(.secondary)
-                                            }
                                         }
                                     case .failure:
                                         Image(systemName: "photo")
