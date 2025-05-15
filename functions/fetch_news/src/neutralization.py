@@ -403,7 +403,7 @@ def generate_neutral_analysis_single(group_info, is_update):
                 
                 if neutral_doc.exists:
                     existing_data = neutral_doc.to_dict()
-                    existing_source_ids = set(existing_data.get('source_ids', []))
+                    existing_source_ids = set(existing_data.get('source_ids', [])) # Sources in database
                     current_source_ids = {source.get('id') for source in valid_sources if source.get('id')}
                     
                     # Get number of sources in each set
