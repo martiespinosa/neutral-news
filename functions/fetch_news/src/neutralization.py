@@ -366,7 +366,7 @@ def check_if_update_needed(group_id, valid_sources):
         # Continue with update in case of error
         return None, {}
 
-def apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT):
+def apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT, is_update=False):
     """Apply source limit and handle insufficient sources cases."""
     # Apply source limit after deduplication
     if len(valid_sources) > SOURCES_LIMIT:
@@ -384,12 +384,12 @@ def apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT):
         print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources, marked {len(removed_sources)} excess sources for unassignment")
     
     if len(valid_sources) < MIN_VALID_SOURCES:
-        handle_insufficient_sources(valid_sources, group_id, group_dict)
+        handle_insufficient_sources(valid_sources, group_id, group_dict, is_update)
         return None, group_dict
         
     return valid_sources, group_dict
 
-def handle_insufficient_sources(valid_sources, group_id, group_dict):
+def handle_insufficient_sources(valid_sources, group_id, group_dict, is_update=False):
     """Handle case with insufficient sources after deduplication."""
     print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
     
@@ -405,10 +405,11 @@ def handle_insufficient_sources(valid_sources, group_id, group_dict):
                     'updated_at': None
                 })
                 # Also handle neutral news doc
-                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                neutral_doc_ref.update({
-                    'source_ids': firestore.ArrayRemove([source_id])
-                })
+                if (is_update):
+                    neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                    neutral_doc_ref.update({
+                        'source_ids': firestore.ArrayRemove([source_id])
+                    })
                 # Add to dictionary
                 if str(group_id) not in group_dict:
                     group_dict[str(group_id)] = []
@@ -542,7 +543,7 @@ def generate_neutral_analysis_single(group_info, is_update):
             delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
 
         # Step 4: Apply source limits and handle insufficient sources
-        valid_sources, group_dict = apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT)
+        valid_sources, group_dict = apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT, is_update)
         if not valid_sources:
             return None
             
