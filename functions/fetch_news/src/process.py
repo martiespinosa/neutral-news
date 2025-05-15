@@ -45,6 +45,8 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
     # Track which groups are existing vs new
     existing_groups = set()
     
+    MIN_VALID_SOURCES = 3
+    
     # Process each news item from current batch
     for noticia in grouped_news:
         grupo = noticia.get("group")
@@ -149,15 +151,15 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
     groups_not_saved_by_fallback = []
     
     for grupo in groups_using_fallback:
-        if valid_sources_no_fallback[grupo] < 2 and valid_sources_with_fallback[grupo] >= 2:
+        if valid_sources_no_fallback[grupo] < MIN_VALID_SOURCES and valid_sources_with_fallback[grupo] >= MIN_VALID_SOURCES:
             groups_saved_by_fallback.append(grupo)
-        elif valid_sources_with_fallback[grupo] < 2:
+        elif valid_sources_with_fallback[grupo] < MIN_VALID_SOURCES:
             groups_not_saved_by_fallback.append(grupo)
     
     # Create final list of valid groups
     valid_groups = []
     for grupo, sources in grupos.items():
-        if len(sources) >= 2:
+        if len(sources) >= MIN_VALID_SOURCES:
             # Mark whether this is an existing or new group
             is_existing = grupo in existing_groups
             valid_groups.append({
@@ -167,10 +169,10 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
             })
     
     # Log statistics
-    insufficient_groups = [g for g, s in grupos.items() if len(s) < 2]
+    insufficient_groups = [g for g, s in grupos.items() if len(s) < MIN_VALID_SOURCES]
     if insufficient_groups:
-        print(f"⚠️ {len(insufficient_groups)} groups had fewer than 2 valid sources: {sorted(insufficient_groups)}")
-    
+        print(f"⚠️ {len(insufficient_groups)} groups had fewer than {MIN_VALID_SOURCES} valid sources: {sorted(insufficient_groups)}")
+
     if groups_saved_by_fallback:
         print(f"✅ {len(groups_saved_by_fallback)} groups were saved by fallback descriptions: {sorted(groups_saved_by_fallback)}")
     
