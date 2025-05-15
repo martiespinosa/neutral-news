@@ -117,8 +117,8 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    RECENT_GROUPS_HOURS = 24 # Number of hours to look back for recent groups
-    REFERENCE_NEWS_HOURS = 24 # Number of hours to look back for reference news
+    RECENT_GROUPS_HOURS = 6 # Number of hours to look back for recent groups
+    REFERENCE_NEWS_HOURS = 6 # Number of hours to look back for reference news
 
     # Get recent unique group IDs
     recent_groups_time_threshold = datetime.now() - timedelta(hours=RECENT_GROUPS_HOURS)
@@ -343,7 +343,6 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
             for source_id in sources_to_unassign[group_str]:
                 if source_id in source_ids:
                     source_ids.remove(source_id)
-                    print(f"  Removed source {source_id} from sources list for group {group}")
 
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
 
@@ -402,7 +401,6 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
             for source_id in sources_to_unassign[group_str]:
                 if source_id in source_ids:
                     source_ids.remove(source_id)
-                    print(f"  Removed source {source_id} from sources list for group {group}")
         
         # Initialize neutral_news_ref before any usage
         neutral_news_ref = db.collection('neutral_news').document(str(group))
@@ -543,6 +541,21 @@ def get_oldest_pub_date(source_ids, db):
     batch = db.batch()
     batch_count = 0
 
+    def normalize_datetime(dt):
+        """Convert datetime to naive (remove timezone info) if it has timezone info"""
+        if dt is None:
+            return datetime.now()
+        if not isinstance(dt, datetime):
+            return datetime.now()
+        if dt.tzinfo is not None:
+            # Convert to UTC then remove timezone info
+            try:
+                dt = dt.astimezone(tz=None).replace(tzinfo=None)
+            except Exception:
+                # If conversion fails, create a new naive datetime
+                return datetime.now()
+        return dt
+
     for news_id in source_ids:
         try:
             doc = db.collection("news").document(news_id).get()
@@ -568,15 +581,14 @@ def get_oldest_pub_date(source_ids, db):
                             created_at = None
                     pub_date = created_at
 
-                # Fallback to now if still missing
-                if pub_date is None or not isinstance(pub_date, datetime):
-                    pub_date = datetime.now()
+                # Normalize the datetime to ensure it's timezone-naive
+                pub_date = normalize_datetime(pub_date)
 
                 # If pub_date is older than cutoff, use created_at or now, and update Firestore
                 if pub_date < cutoff_date:
-                    fixed_date = datetime.now()
+                    fixed_date = normalize_datetime(datetime.now())
                     if isinstance(created_at, datetime):
-                        fixed_date = created_at
+                        fixed_date = normalize_datetime(created_at)
                     pub_dates.append(fixed_date)
                     
                     # Update Firestore if needed
@@ -602,7 +614,11 @@ def get_oldest_pub_date(source_ids, db):
         except Exception as e:
             print(f"Error committing batch updates: {str(e)}")
 
-    return min(pub_dates) if pub_dates else datetime.now()
+    # Make sure the default is also a normalized datetime
+    if not pub_dates:
+        return normalize_datetime(datetime.now())
+    
+    return min(pub_dates)
 
 def delete_old_news(hours=72):
     """
