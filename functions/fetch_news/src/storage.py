@@ -376,7 +376,6 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
         traceback.print_exc()
         return False
     
-
 def update_existing_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None, skipped=False):
     """
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
@@ -393,13 +392,17 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
                 if source_id in source_ids:
                     source_ids.remove(source_id)
                     print(f"  Removed source {source_id} from sources list for group {group}")
-                    
-        if (skipped):
+        
+        # Initialize neutral_news_ref before any usage
+        neutral_news_ref = db.collection('neutral_news').document(str(group))
+        
+        if skipped:
             neutral_news_data = {
                 "source_ids": source_ids,
             }
             neutral_news_ref.update(neutral_news_data)
             return False
+        
         image_url, image_medium = get_most_neutral_image(
             source_ids, 
             neutralization_result.get("source_ratings", [])
@@ -409,8 +412,6 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         
         # Ensure we're using a standard datetime object, not a DatetimeWithNanoseconds
         current_time = datetime.now()
-        
-        neutral_news_ref = db.collection('neutral_news').document(str(group))
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
         neutral_news_data = {
