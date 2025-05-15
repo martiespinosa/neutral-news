@@ -423,22 +423,16 @@ def generate_neutral_analysis_single(group_info, is_update):
                     
                     # Skip update if neither condition is met
                     if change_ratio < 0.5 and not significant_increase:
-                        print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{max(existing_count, current_count)} sources changed ({change_ratio:.2%}), not significant.")
+                        print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), not significant.")
                         
-                        # Add all current sources to group_dict to unassign them
-                        unused_sources = []
-                        for source in valid_sources:
-                            source_id = source.get('id')
-                            if source_id:
-                                if str(group_id) not in group_dict:
-                                    group_dict[str(group_id)] = []
-                                if source_id not in group_dict[str(group_id)]:
-                                    group_dict[str(group_id)].append(source_id)
-                                unused_sources.append(source_id)
-                                
-                        if unused_sources:
-                            print(f"ℹ️ Marked {len(unused_sources)} sources for unassignment from group {group_id}")
-                            
+                        # Find sources in existing but not in current - mark for unassignment
+                        removed_sources = existing_source_ids - current_source_ids
+                        if removed_sources:
+                            if str(group_id) not in group_dict:
+                                group_dict[str(group_id)] = []
+                            group_dict[str(group_id)].extend(list(removed_sources))
+                            print(f"ℹ️ Marked {len(removed_sources)} sources for unassignment from group {group_id}")
+                        
                         # Return existing data to avoid regeneration
                         skipped = True
                         return existing_data, group_dict, skipped
