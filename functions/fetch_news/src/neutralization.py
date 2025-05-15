@@ -328,12 +328,12 @@ def generate_neutral_analysis_single(group_info, is_update):
     
     SOURCES_LIMIT = 16  # Maximum number of sources to process
     try:
-        valid_sources = []
+        initial_sources = []
         for source in sources:
             if 'id' in source and 'title' in source and 'scraped_description' in source and 'source_medium' in source:
-                valid_sources.append(source)
+                initial_sources.append(source)
         
-        if len(valid_sources) < MIN_VALID_SOURCES:
+        if len(initial_sources) < MIN_VALID_SOURCES:
             print(f"⚠️ Not enough valid sources for group {group_id}. Skipping.")
             return None
             
@@ -341,7 +341,7 @@ def generate_neutral_analysis_single(group_info, is_update):
         sources_by_medium = {}
         sources_to_delete = []
         
-        for source in valid_sources:
+        for source in initial_sources:
             medium = source.get('source_medium')
             
             # Check for date fields (try different possible field names)
@@ -364,30 +364,6 @@ def generate_neutral_analysis_single(group_info, is_update):
                 else:
                     # First source for this medium
                     sources_by_medium[medium] = source
-        
-        # Update overridden sources to remove group assignment
-        if sources_to_delete:
-            db = initialize_firebase()
-            for source in sources_to_delete:
-                source_id = source.get('id')
-                if source_id:
-                    try:
-                        db.collection('news').document(source_id).update({
-                            'group': None,
-                            'updated_at': None
-                        })
-                        # Also handle neutral news doc
-                        if is_update:
-                            neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                            neutral_doc_ref.update({
-                                'source_ids': firestore.ArrayRemove([source_id])
-                            })
-                        # Add to dictionary for later removal
-                        if str(group_id) not in group_dict:
-                            group_dict[str(group_id)] = []
-                        group_dict[str(group_id)].append(source_id)
-                    except Exception as e:
-                        print(f"  Failed to update news item {source_id}: {str(e)}")
         
         # Use deduplicated sources 
         valid_sources = list(sources_by_medium.values())
@@ -420,7 +396,6 @@ def generate_neutral_analysis_single(group_info, is_update):
                         (existing_count >= 6 and existing_count < 9 and current_count >= 9) or
                         (existing_count >= 9 and existing_count < 12 and current_count >= 12)
                     )
-                    
                     # Skip update if neither condition is met
                     if change_ratio < 0.5 and not significant_increase:
                         print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), not significant.")
@@ -438,18 +413,14 @@ def generate_neutral_analysis_single(group_info, is_update):
                         return existing_data, group_dict, skipped
                     else:
                         print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
-                        
-                        # Find sources in existing but not in current - mark for unassignment
-                        removed_sources = existing_source_ids - current_source_ids
-                        if removed_sources:
-                            if str(group_id) not in group_dict:
-                                group_dict[str(group_id)] = []
-                            group_dict[str(group_id)].extend(list(removed_sources))
-                            print(f"ℹ️ Marked {len(removed_sources)} removed sources for unassignment from group {group_id}")
+                        if sources_to_delete:
+                            delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id)
             except Exception as e:
                 print(f"Error checking update necessity: {str(e)}")
                 # Continue with update in case of error
-        
+        elif sources_to_delete:
+            delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id)
+
         # Apply source limit after deduplication
         if len(valid_sources) > SOURCES_LIMIT:
             # Mark removed sources for unassignment
@@ -592,6 +563,34 @@ def generate_neutral_analysis_single(group_info, is_update):
         import traceback
         traceback.print_exc()
         return None
+    
+def delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id):
+    """
+    Delete invalid sources from the database.
+    This is called after processing all groups to ensure that we don't hit rate limits.
+    """
+    db = initialize_firebase()
+    for source in sources_to_delete:
+        source_id = source.get('id')
+        if source_id:
+            try:
+                db.collection('news').document(source_id).update({
+                    'group': None,
+                    'updated_at': None
+                })
+                # Also handle neutral news doc
+                if is_update:
+                    neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                    neutral_doc_ref.update({
+                        'source_ids': firestore.ArrayRemove([source_id])
+                    })
+                # Add to dictionary for later removal
+                if str(group_id) not in group_dict:
+                    group_dict[str(group_id)] = []
+                group_dict[str(group_id)].append(source_id)
+            except Exception as e:
+                print(f"  Failed to update news item {source_id}: {str(e)}")
+    
 
 # Keep the batch function as a wrapper that calls the single function for each item
 def generate_neutral_analysis_batch(group_batch, is_update):
