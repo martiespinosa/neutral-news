@@ -22,7 +22,7 @@ def process_news_groups():
         
         # Neutralizar los grupos recién creados y guardarlos
         neutralized_count = neutralize_and_more(groups_prepared)
-
+        
         print(f"Neutralized {neutralized_count} groups")
     except Exception as e:
         print(f"Error in process_news_groups: {str(e)}")

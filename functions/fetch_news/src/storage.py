@@ -288,7 +288,7 @@ def update_news_with_neutral_scores(sources, neutralization_result, sources_to_u
                             if news_data:
                                 # Solo actualizar si la puntuación es diferente
                                 if news_data.get("neutral_score") != neutral_score:
-                                    batch.update(news_ref, {"neutral_score": neutral_score, "updated_at": datetime.now()})
+                                    batch.update(news_ref, {"group": group_id, "neutral_score": neutral_score, "updated_at": datetime.now()})
                                     updated_count += 1
                                     updated_news_ids.add(news_id)
         
