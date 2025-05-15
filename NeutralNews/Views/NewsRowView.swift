@@ -45,7 +45,7 @@ struct NewsRowView: View {
 }
 
 #Preview {
-    NewsRowView(news: NeutralNews.mock, imageUrl: nil)
+    NewsRowView(news: NeutralNews.mock, imageUrl: "https://www.lavanguardia.com/files/og_thumbnail/files/fp/uploads/2025/04/22/68075b725f598.r_d.1714-2017-0.jpeg")
 }
 
 struct NewsImageView: View {
@@ -101,4 +101,8 @@ struct NewsImageView: View {
         .frame(height: 250)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
+}
+
+#Preview {
+    NewsImageView(news: NeutralNews.mock, imageUrl: "https://www.lavanguardia.com/files/og_thumbnail/files/fp/uploads/2025/04/22/68075b725f598.r_d.1714-2017-0.jpeg")
 }

@@ -14,10 +14,10 @@ struct News: Codable, Identifiable {
     let category: String
     let imageUrl: String?
     let link: String
-    let pubDate: String
+    let pubDate: Date
     let sourceMedium: Media
-    var neutralScore: Int?
-    var group: Int?
+    var neutralScore: Int
+    var group: Int
     
     static let mock = News(
         title: "Lorem ipsum dolor sit amet",
@@ -25,9 +25,9 @@ struct News: Codable, Identifiable {
         category: "Category",
         imageUrl: nil,
         link: "Link",
-        pubDate: "PubDate",
+        pubDate: .now,
         sourceMedium: .abc,
-        neutralScore: nil,
-        group: nil
+        neutralScore: 50,
+        group: 0
     )
 }

@@ -58,7 +58,13 @@ struct NewsView: View {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16)
                                         .fill(Color.secondary.opacity(0.2))
-                                    Image(systemName: "photo")
+                                    VStack {
+                                        Image(systemName: "photo")
+                                            .font(.largeTitle)
+                                        Text("No Image")
+                                            .font(.title)
+                                            .fontWeight(.semibold)
+                                    }
                                 }
                                 .font(.largeTitle)
                                 .frame(height: 250)
