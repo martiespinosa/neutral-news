@@ -376,6 +376,7 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
         traceback.print_exc()
         return False
     
+
 def update_existing_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None, skipped=False):
     """
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.

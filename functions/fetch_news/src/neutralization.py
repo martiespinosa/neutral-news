@@ -188,7 +188,9 @@ def neutralize_and_more(news_groups, batch_size=5):
                     success = update_existing_neutral_news(group, result, source_ids, sources_to_unassign, skipped)
                 else:
                     success = store_neutral_news(group, result, source_ids, sources_to_unassign)
-                    
+                
+                # Initialize scores_result to avoid UnboundLocalError
+                scores_result = None
                 if not skipped:
                     scores_result = update_news_with_neutral_scores(sources, result, sources_to_unassign)
                 
