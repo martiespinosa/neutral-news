@@ -210,7 +210,7 @@ def neutralize_and_more(news_groups, batch_size=5):
         
         # Process all groups asynchronously using ThreadPoolExecutor
         print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {MAX_WORKERS} workers")
-        
+        MAX_WORKERS = min(MAX_WORKERS, len(groups_to_update) + len(groups_to_neutralize))
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all update tasks
             update_futures = {
