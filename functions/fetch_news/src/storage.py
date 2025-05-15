@@ -367,11 +367,13 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
             "source_ids": source_ids,
         }
 
+ 
         # Update sources' groups
         for source_id in source_ids:
             news_ref = db.collection('news').document(source_id)
-            if news_ref.exists:
-                news_data = news_ref.to_dict()
+            news_snapshot = news_ref.get()  # Retrieve the document snapshot
+            if news_snapshot.exists:  # Check if the document exists
+                news_data = news_snapshot.to_dict()
                 if news_data.get("group") != group:
                     # Update only if the group is different
                     news_ref.update({"group": group, "updated_at": datetime.now()})
@@ -445,8 +447,9 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         # Update sources' groups
         for source_id in source_ids:
             news_ref = db.collection('news').document(source_id)
-            if news_ref.exists:
-                news_data = news_ref.to_dict()
+            news_snapshot = news_ref.get()  # Retrieve the document snapshot
+            if news_snapshot.exists:
+                news_data = news_snapshot.to_dict()
                 if news_data.get("group") != group:
                     # Update only if the group is different
                     news_ref.update({"group": group, "updated_at": datetime.now()})
