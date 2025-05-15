@@ -6,6 +6,7 @@ import numpy as np
 
 _model = None
 _nlp_modules_loaded = False
+MIN_VALID_SOURCES = 3
 
 def _load_nlp_modules():
     """Lazily import NLP-related modules to speed up cold starts"""
@@ -238,8 +239,8 @@ def perform_clustering(all_items_for_clustering_df, embeddings_norm, df, has_ref
     
     print("ℹ️ Calculating nearest neighbors graph...")
     n_neighbors = min(5, embeddings_norm.shape[0])
-    if n_neighbors < 2 and embeddings_norm.shape[0] > 1:
-        n_neighbors = 2 
+    if n_neighbors < MIN_VALID_SOURCES and embeddings_norm.shape[0] > 1:
+        n_neighbors = MIN_VALID_SOURCES 
     elif embeddings_norm.shape[0] <= 1:
         print("ℹ️ Not enough samples to perform clustering. Assigning all to group 0 or existing groups.")
         if not has_reference_news and embeddings_norm.shape[0] == 1:
@@ -256,8 +257,8 @@ def perform_clustering(all_items_for_clustering_df, embeddings_norm, df, has_ref
     dist_matrix_sparse_sorted = sort_graph_by_row_values(dist_matrix_sparse)
     
     print("ℹ️ Applying DBSCAN algorithm...")
-    eps = 0.275
-    min_samples = 2
+    eps = 0.2125
+    min_samples = MIN_VALID_SOURCES
     
     clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
     group_labels = clustering.fit_predict(dist_matrix_sparse_sorted)
@@ -427,7 +428,7 @@ def _calculate_group_similarity(items):
     ])
     
     # If we don't have at least two embeddings, return default value
-    if len(embeddings) < 2:
+    if len(embeddings) < MIN_VALID_SOURCES:
         return 0.5  # Default middle value
         
     # Calculate pairwise similarities
@@ -722,7 +723,7 @@ def process_results(df, has_reference_news=False):
                 processed_ids_for_result.add(item_row["id"])
 
         # Handle groups with fewer than 2 items after deduplication
-        if len(current_group_items_for_result) < 2 and not any(item['id'] in reference_items_in_final_group['id'].values for item in current_group_items_for_result):
+        if len(current_group_items_for_result) < MIN_VALID_SOURCES and not any(item['id'] in reference_items_in_final_group['id'].values for item in current_group_items_for_result):
             for item_dict in current_group_items_for_result:
                 item_dict["group"] = None
                 result.append(item_dict)

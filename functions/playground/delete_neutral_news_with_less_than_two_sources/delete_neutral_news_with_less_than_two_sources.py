@@ -4,7 +4,7 @@ import os
 
 # Ruta al archivo JSON de tu cuenta de servicio - Relative path from script location
 SERVICE_ACCOUNT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../neutralnews-ca548-firebase-adminsdk-fbsvc-b2a2b9fa03.json'))
-
+MIN_VALID_SOURCES = 3
 def main():
     print("Connecting to Firebase...")
     cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
@@ -20,7 +20,7 @@ def main():
         source_ids = data.get('source_ids', [])
         
         # Check if the document has fewer than 2 source IDs
-        if len(source_ids) < 2:
+        if len(source_ids) < MIN_VALID_SOURCES:
             doc_id = doc.id
             print(f"🗑️ Deleting document {doc_id} with only {len(source_ids)} sources: {source_ids}")
             doc.reference.delete()
