@@ -209,8 +209,8 @@ def neutralize_and_more(news_groups, batch_size=5):
                 return {"success": False, "error": str(e), "group": group_info.get('group')}
         
         # Process all groups asynchronously using ThreadPoolExecutor
-        print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {MAX_WORKERS} workers")
         MAX_WORKERS = min(MAX_WORKERS, len(groups_to_update) + len(groups_to_neutralize))
+        print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {MAX_WORKERS} workers")
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all update tasks
             update_futures = {
@@ -339,9 +339,11 @@ def check_if_update_needed(group_id, valid_sources):
         )
         
         # Skip update if neither condition is met
-        if change_ratio < 0.5 and not significant_increase:
-            print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), not significant.")
-            
+        if change_ratio < 0.5 or not significant_increase:
+            if (change_ratio < 0.5):
+                print(f"ℹ️ Skipping update for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}) (min 50%).")
+            elif not significant_increase:
+                print(f"ℹ️ Skipping update for group {group_id}: From {existing_count} to {current_count} sources (no significant increase).")
             # Find sources that were added to the valid_sources that must be unassigned
             # This is the difference between current and existing source IDs
             # We only want to unassign sources that are not in the existing db valid sources
