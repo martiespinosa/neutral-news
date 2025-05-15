@@ -443,7 +443,7 @@ def generate_neutral_analysis_single(group_info, is_update):
                         skipped = True
                         return existing_data, group_dict, skipped
                     else:
-                        print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{max(existing_count, current_count)} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
+                        print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
                         
                         # Find sources in existing but not in current - mark for unassignment
                         removed_sources = existing_source_ids - current_source_ids
