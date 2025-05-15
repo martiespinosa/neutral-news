@@ -185,7 +185,10 @@ def neutralize_and_more(news_groups, batch_size=5):
                     
                 # Process the result based on whether this is an update or new neutralization
                 if is_update:
-                    success = update_existing_neutral_news(group, result, source_ids, sources_to_unassign, skipped)
+                    if skipped:
+                        success = True
+                    else:
+                        success = update_existing_neutral_news(group, result, source_ids, sources_to_unassign)
                 else:
                     success = store_neutral_news(group, result, source_ids, sources_to_unassign)
                 
@@ -228,7 +231,7 @@ def neutralize_and_more(news_groups, batch_size=5):
             for future in as_completed(update_futures):
                 result = future.result()
                 if result["success"]:
-                    if result.get("skipped", False):
+                    if result["skipped"]:
                         # This was a skipped update
                         skipped_update_count += 1
                         skipped_update_groups.append(result["group"])
@@ -236,8 +239,8 @@ def neutralize_and_more(news_groups, batch_size=5):
                         # This was a completed update
                         updated_count += 1
                         updated_groups.append(result["group"])
-                        
-                        if result.get("scores_result"):
+
+                        if result["scores_result"]:
                             count, news_ids = result["scores_result"]
                             updated_neutral_scores_count += count
                             updated_neutral_scores_news.extend(news_ids)
@@ -684,35 +687,3 @@ def delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict
                 group_dict[str(group_id)].append(source_id)
             except Exception as e:
                 print(f"  Failed to update news item {source_id}: {str(e)}")
-    
-
-# Keep the batch function as a wrapper that calls generate_neutral_analysis_single for each item
-def generate_neutral_analysis_batch(group_batch, is_update):
-    """Wrapper function that calls generate_neutral_analysis_single for each item in batch"""
-    if not group_batch:
-        return []
-    
-    results = []
-    combined_dict = {}
-    
-    for group_info in group_batch:
-        response = generate_neutral_analysis_single(group_info, is_update)
-        
-        if response is None:
-            # If we hit a rate limit, stop processing the batch
-            return None
-            
-        # Unpack the response
-        if isinstance(response, tuple) and len(response) == 2:
-            result, sources_to_unassign = response
-            # Merge dictionaries
-            for group_id, source_ids in sources_to_unassign.items():
-                if group_id not in combined_dict:
-                    combined_dict[group_id] = []
-                combined_dict[group_id].extend(source_ids)
-        else:
-            result = response
-            
-        results.append(result)
-    
-    return results, combined_dict

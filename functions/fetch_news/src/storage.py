@@ -387,7 +387,7 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
         traceback.print_exc()
         return False
     
-def update_existing_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None, skipped=False):
+def update_existing_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None):
     """
     Actualiza un documento existente de noticias neutrales en lugar de crear uno nuevo.
     """
@@ -406,13 +406,6 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         
         # Initialize neutral_news_ref before any usage
         neutral_news_ref = db.collection('neutral_news').document(str(group))
-        
-        if skipped:
-            neutral_news_data = {
-                "source_ids": source_ids,
-            }
-            neutral_news_ref.update(neutral_news_data)
-            return False
         
         image_url, image_medium = get_most_neutral_image(
             source_ids, 
