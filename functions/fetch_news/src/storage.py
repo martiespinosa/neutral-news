@@ -2,6 +2,62 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 from .config import initialize_firebase
 
+def parse_pub_date(date_str):
+    """
+    Parse publication date from various formats into datetime object
+    """
+    if not date_str or not isinstance(date_str, str):
+        return None
+        
+    date_formats = [
+        "%a, %d %b %Y %H:%M:%S %Z",         # Wed, 9 Apr 2025 19:00:00 GMT
+        "%a, %d %b %Y %H:%M:%S %z",         # Sat, 10 May 2025 16:55:26 +0200
+        "%d %b %Y %H:%M:%S %z",             # 03 Dec 2024 14:20:05 +0100
+        "%Y-%m-%dT%H:%M:%S%z",              # 2025-05-14T23:31:37+02:00
+        "%Y-%m-%d %H:%M:%S%z",              # 2025-05-14 23:31:37+02:00
+        "%Y-%m-%dT%H:%M:%S.%f%z",           # 2025-05-14T23:31:37.000+02:00
+        "%a, %d %b %Y %H:%M:%S",            # Wed, 9 Apr 2025 19:00:00
+        "%d %b %Y %H:%M:%S",                # 03 Dec 2024 14:20:05
+        "%Y-%m-%dT%H:%M:%S",                # 2025-05-14T23:31:37
+        "%Y-%m-%d %H:%M:%S",                # 2025-05-14 23:31:37
+    ]
+    
+    # Handle common timezone abbreviations
+    cleaned_date_str = date_str
+    timezone_mappings = {
+        " GMT": " +0000",
+        " UTC": " +0000",
+        " UT": " +0000",
+        " Z": " +0000",
+        " EST": " -0500",
+        " EDT": " -0400",
+        " CST": " -0600",
+        " CDT": " -0500",
+        " MST": " -0700",
+        " MDT": " -0600",
+        " PST": " -0800",
+        " PDT": " -0700",
+        " BST": " +0100",
+        " CET": " +0100",
+        " CEST": " +0200"
+    }
+    
+    # Replace timezone abbreviations with numeric offsets
+    for tz, offset in timezone_mappings.items():
+        if date_str.endswith(tz):
+            cleaned_date_str = date_str.replace(tz, offset)
+            break
+    
+    # Try parsing with each format
+    for date_format in date_formats:
+        try:
+            return datetime.strptime(cleaned_date_str, date_format)
+        except ValueError:
+            continue
+    
+    print(f"Warning: Could not parse date string: {date_str}")
+    return None
+
 def store_news_in_firestore(news_list):
     """
     Store news items in Firestore database
@@ -21,9 +77,21 @@ def store_news_in_firestore(news_list):
         existing_news = [doc for doc in existing_news_query.stream()]
         
         if not existing_news:
+            # Convert pub_date to proper datetime if it exists
+            news_dict = news.to_dict()
+            
+            if 'pub_date' in news_dict and news_dict['pub_date']:
+                pub_date_str = news_dict['pub_date']
+                parsed_date = parse_pub_date(pub_date_str)
+                if parsed_date:
+                    news_dict['pub_date'] = parsed_date  # Firestore auto-converts datetime to Timestamp
+                else:
+                    # If parsing fails, use current time
+                    news_dict['pub_date'] = datetime.now()
+            
             # Create a new document in the 'news' collection
             news_ref = db.collection('news').document(news.id)
-            batch.set(news_ref, news.to_dict())
+            batch.set(news_ref, news_dict)
             news_count += 1
             current_batch += 1
             
@@ -49,8 +117,8 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    RECENT_GROUPS_HOURS = 12 # Number of hours to look back for recent groups
-    REFERENCE_NEWS_HOURS = 12 # Number of hours to look back for reference news
+    RECENT_GROUPS_HOURS = 1 # Number of hours to look back for recent groups
+    REFERENCE_NEWS_HOURS = 1 # Number of hours to look back for reference news
 
     # Get recent unique group IDs
     recent_groups_time_threshold = datetime.now() - timedelta(hours=RECENT_GROUPS_HOURS)
@@ -332,6 +400,9 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
         
+        # Ensure we're using a standard datetime object, not a DatetimeWithNanoseconds
+        current_time = datetime.now()
+        
         neutral_news_ref = db.collection('neutral_news').document(str(group))
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
@@ -340,15 +411,19 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
             "relevance": neutralization_result.get("relevance"),
-            "updated_at": datetime.now(),
-            "date": oldest_pub_date,
-            "image_url": image_url,
-            "image_medium": image_medium,
+            "updated_at": current_time,
             "source_ids": source_ids,
         }
 
+        # Only add these fields if they are valid
+        if isinstance(oldest_pub_date, datetime):
+            neutral_news_data["date"] = oldest_pub_date
+            
         if image_url:
             neutral_news_data["image_url"] = image_url
+            
+        if image_medium:
+            neutral_news_data["image_medium"] = image_medium
         
         neutral_news_ref.update(neutral_news_data)
         return True
@@ -438,119 +513,73 @@ def get_most_neutral_image(source_ids, source_ratings):
 def get_oldest_pub_date(source_ids, db):
     """
     Obtiene la fecha de publicación más antigua de una lista de IDs de noticias.
-    Maneja múltiples formatos de fecha comunes en feeds RSS.
+    Asume que pub_date es un datetime (Firestore Timestamp).
     Asegura que la fecha no sea más antigua que 3 días.
     """
     pub_dates = []
-    # Create a naive datetime for cutoff comparison
     cutoff_date = datetime.now() - timedelta(days=3)
     batch = db.batch()
     batch_count = 0
-    
-    # Lista de formatos de fecha posibles
-    date_formats = [
-        "%a, %d %b %Y %H:%M:%S %z",     # Sat, 03 May 2025 18:07:56 +0200
-        "%d %b %Y %H:%M:%S %z",         # 03 May 2025 13:09:49 +0200
-        "%Y-%m-%dT%H:%M:%S%z",          # 2025-05-03T18:07:56+0200
-        "%Y-%m-%d %H:%M:%S%z",          # 2025-05-03 18:07:56+0200
-        "%a, %d %b %Y %H:%M:%S",        # Sin zona horaria
-        "%d %b %Y %H:%M:%S",            # Sin zona horaria
-        "%Y-%m-%dT%H:%M:%S",            # ISO sin zona horaria
-        "%Y-%m-%d %H:%M:%S"             # Sin zona horaria
-    ]
 
     for news_id in source_ids:
-        doc = db.collection("news").document(news_id).get()
-        if doc.exists:
-            data = doc.to_dict()
-            pub_date_str = data.get("pub_date")
-            created_at = data.get("created_at")
-            
-            if pub_date_str:
-                parsed = False
-                
-                for date_format in date_formats:
+        try:
+            doc = db.collection("news").document(news_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                pub_date = data.get("pub_date")
+                created_at = data.get("created_at")
+
+                # Convert to standard datetime object if needed
+                if hasattr(pub_date, 'timestamp'):
                     try:
-                        cleaned_date_str = pub_date_str
-                        # Handle common timezone abbreviations
-                        timezone_mappings = {
-                            " GMT": " +0000",
-                            " UTC": " +0000",
-                            " UT": " +0000",
-                            " Z": " +0000",
-                            " EST": " -0500",
-                            " EDT": " -0400",
-                            " CST": " -0600",
-                            " CDT": " -0500",
-                            " MST": " -0700",
-                            " MDT": " -0600",
-                            " PST": " -0800",
-                            " PDT": " -0700",
-                            " BST": " +0100",
-                            " CET": " +0100",
-                            " CEST": " +0200",
-                            " JST": " +0900",
-                            " IST": " +0530",
-                            " AEST": " +1000",
-                            " AEDT": " +1100"
-                        }
-                        
-                        # If there's no timezone offset in the string
-                        if "+0000" not in pub_date_str and "-0000" not in pub_date_str and \
-                           not any(f"+{i:02d}00" in pub_date_str or f"-{i:02d}00" in pub_date_str for i in range(24)):
-                            
-                            # Check for timezone abbreviations at the end
-                            for tz, offset in timezone_mappings.items():
-                                if pub_date_str.endswith(tz):
-                                    cleaned_date_str = pub_date_str.replace(tz, offset)
-                                    break
-                        
-                        pub_date = datetime.strptime(cleaned_date_str, date_format)
-                        
-                        # Convert timezone-aware datetime to naive for comparison
-                        if hasattr(pub_date, 'tzinfo') and pub_date.tzinfo is not None:
-                            # Convert to UTC and then remove timezone info
-                            pub_date = pub_date.astimezone(None).replace(tzinfo=None)
-                        
-                        # Check if the date is older than our cutoff
-                        if pub_date < cutoff_date:
-                            # Use created_at if available, otherwise use current date
-                            if created_at:
-                                # Ensure created_at is also timezone-naive
-                                if hasattr(created_at, 'tzinfo') and created_at.tzinfo is not None:
-                                    created_at = created_at.replace(tzinfo=None)
-                                pub_date = created_at
-                                # Update the document with created_at as pub_date
-                                batch.update(doc.reference, {"pub_date": created_at})
-                                batch_count += 1
-                                if batch_count >= 450:
-                                    batch.commit()
-                                    batch = db.batch()
-                                    batch_count = 0
-                            else:
-                                pub_date = datetime.now()
-                        
-                        pub_dates.append(pub_date)
-                        parsed = True
-                        break
-                    except ValueError:
-                        continue
-                
-                if not parsed:
-                    print(f"No se pudo parsear la fecha: {pub_date_str}")
-                    # If we can't parse the date, use created_at or current time
-                    if created_at:
-                        # Ensure created_at is timezone-naive
-                        if hasattr(created_at, 'tzinfo') and created_at.tzinfo is not None:
-                            created_at = created_at.replace(tzinfo=None)
-                        pub_dates.append(created_at)
-                    else:
-                        pub_dates.append(datetime.now())
-    
+                        # Convert to standard datetime using timestamp
+                        pub_date = datetime.fromtimestamp(pub_date.timestamp())
+                    except (AttributeError, TypeError):
+                        pub_date = None
+
+                # Fallback to created_at if pub_date is missing or not a datetime
+                if pub_date is None and created_at is not None:
+                    if hasattr(created_at, 'timestamp'):
+                        try:
+                            created_at = datetime.fromtimestamp(created_at.timestamp())
+                        except (AttributeError, TypeError):
+                            created_at = None
+                    pub_date = created_at
+
+                # Fallback to now if still missing
+                if pub_date is None or not isinstance(pub_date, datetime):
+                    pub_date = datetime.now()
+
+                # If pub_date is older than cutoff, use created_at or now, and update Firestore
+                if pub_date < cutoff_date:
+                    fixed_date = datetime.now()
+                    if isinstance(created_at, datetime):
+                        fixed_date = created_at
+                    pub_dates.append(fixed_date)
+                    
+                    # Update Firestore if needed
+                    try:
+                        batch.update(doc.reference, {"pub_date": fixed_date})
+                        batch_count += 1
+                        if batch_count >= 450:
+                            batch.commit()
+                            batch = db.batch()
+                            batch_count = 0
+                    except Exception as e:
+                        print(f"Error updating pub_date for {news_id}: {str(e)}")
+                else:
+                    pub_dates.append(pub_date)
+        except Exception as e:
+            print(f"Error processing document {news_id}: {str(e)}")
+            continue
+
     # Commit any remaining updates
     if batch_count > 0:
-        batch.commit()
-    
+        try:
+            batch.commit()
+        except Exception as e:
+            print(f"Error committing batch updates: {str(e)}")
+
     return min(pub_dates) if pub_dates else datetime.now()
 
 def delete_old_news(hours=72):
