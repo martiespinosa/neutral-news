@@ -267,10 +267,227 @@ def neutralize_and_more(news_groups, batch_size=5):
         traceback.print_exc()
         return 0
 
+def validate_initial_sources(sources, group_id):
+    """Validate and filter initial sources."""
+    initial_sources = []
+    for source in sources:
+        if all(key in source for key in ('id', 'title', 'scraped_description', 'source_medium')):
+            initial_sources.append(source)
+    
+    if len(initial_sources) < MIN_VALID_SOURCES:
+        print(f"⚠️ Not enough valid sources for group {group_id}. Skipping.")
+        return None
+    
+    return initial_sources
+
+def deduplicate_sources_by_medium(initial_sources):
+    """Select one source per press medium (the most recently published)."""
+    sources_by_medium = {}
+    sources_to_deduplicate = []
+    
+    for source in initial_sources:
+        medium = source.get('source_medium')
+        published_date = source.get('pub_date') or source.get('created_at')
+        
+        if medium:
+            if medium in sources_by_medium:
+                existing_source = sources_by_medium[medium]
+                existing_date = existing_source.get('pub_date') or existing_source.get('created_at')
+                
+                # Compare dates to keep the most recent one
+                if published_date and existing_date and published_date > existing_date:
+                    # This source is newer, so the existing one should be deleted
+                    sources_to_deduplicate.append(existing_source)
+                    sources_by_medium[medium] = source
+                else:
+                    # The existing source is newer or no date comparison possible
+                    sources_to_deduplicate.append(source)
+            else:
+                # First source for this medium
+                sources_by_medium[medium] = source
+    
+    return list(sources_by_medium.values()), sources_to_deduplicate
+
+def check_if_update_needed(group_id, valid_sources):
+    """Check if an update is necessary for existing neutralization."""    
+    group_dict = {}
+    try:
+        db = initialize_firebase()
+        neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+        neutral_doc = neutral_doc_ref.get()
+        
+        if not neutral_doc.exists:
+            return None, {}
+            
+        existing_data = neutral_doc.to_dict()
+        existing_source_ids = set(existing_data.get('source_ids', []))  # Sources in database
+        current_source_ids = {source.get('id') for source in valid_sources if source.get('id')}
+        
+        # Get number of sources in each set
+        existing_count = len(existing_source_ids)
+        current_count = len(current_source_ids)
+        
+        # Calculate how many sources have changed (added or removed)
+        changed_sources = existing_source_ids.symmetric_difference(current_source_ids)
+        change_ratio = len(changed_sources) / max(existing_count, 1)
+        
+        # Define thresholds for significant source count increase
+        significant_increase = (
+            (existing_count >= 3 and existing_count < 6 and current_count >= 6) or
+            (existing_count >= 6 and existing_count < 9 and current_count >= 9) or
+            (existing_count >= 9 and existing_count < 12 and current_count >= 12)
+        )
+        
+        # Skip update if neither condition is met
+        if change_ratio < 0.5 and not significant_increase:
+            print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), not significant.")
+            
+            # Find sources that were added to the valid_sources that must be unassigned
+            # This is the difference between current and existing source IDs
+            # We only want to unassign sources that are not in the existing db valid sources
+            added_sources = current_source_ids - existing_source_ids
+            if added_sources:
+                group_dict[str(group_id)] = list(added_sources)
+                print(f"ℹ️ Marked {len(added_sources)} sources for unassignment from group {group_id}")
+
+            # Return existing data to avoid regeneration
+            return existing_data, group_dict
+        else:
+            print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
+            return None, group_dict
+            
+    except Exception as e:
+        print(f"Error checking update necessity: {str(e)}")
+        # Continue with update in case of error
+        return None, {}
+
+def apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT):
+    """Apply source limit and handle insufficient sources cases."""
+    # Apply source limit after deduplication
+    if len(valid_sources) > SOURCES_LIMIT:
+        # Mark removed sources for unassignment
+        removed_sources = valid_sources[SOURCES_LIMIT:]
+        for source in removed_sources:
+            source_id = source.get('id')
+            if source_id:
+                if str(group_id) not in group_dict:
+                    group_dict[str(group_id)] = []
+                if source_id not in group_dict[str(group_id)]:
+                    group_dict[str(group_id)].append(source_id)
+        
+        valid_sources = valid_sources[:SOURCES_LIMIT]
+        print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources, marked {len(removed_sources)} excess sources for unassignment")
+    
+    if len(valid_sources) < MIN_VALID_SOURCES:
+        handle_insufficient_sources(valid_sources, group_id, group_dict)
+        return None, group_dict
+        
+    return valid_sources, group_dict
+
+def handle_insufficient_sources(valid_sources, group_id, group_dict):
+    """Handle case with insufficient sources after deduplication."""
+    print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
+    
+    # Unassign the group from any remaining source
+    if len(valid_sources) == 1:
+        remaining_source = valid_sources[0]
+        source_id = remaining_source.get('id')
+        if source_id:
+            try:
+                db = initialize_firebase()
+                db.collection('news').document(source_id).update({
+                    'group': None,
+                    'updated_at': None
+                })
+                # Also handle neutral news doc
+                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
+                neutral_doc_ref.update({
+                    'source_ids': firestore.ArrayRemove([source_id])
+                })
+                # Add to dictionary
+                if str(group_id) not in group_dict:
+                    group_dict[str(group_id)] = []
+                group_dict[str(group_id)].append(source_id)
+                print(f"  Unassigned group from the only remaining source {source_id}")
+            except Exception as e:
+                print(f"  Failed to unassign group from source {source_id}: {str(e)}")
+
+def prepare_sources_for_api(valid_sources):
+    """Prepare sources for API call by handling long descriptions."""
+    # Calculate average description length for this group
+    avg_desc_length = sum(len(s['scraped_description']) for s in valid_sources) / len(valid_sources)
+    
+    # Handle outliers (sources with extremadamente long descripciones)
+    for source in valid_sources:
+        desc_len = len(source['scraped_description'])
+        if desc_len > (avg_desc_length * 3) and desc_len > 10000:
+            truncated_length = int(max(avg_desc_length * 2, 10000))
+            source['scraped_description'] = source['scraped_description'][:truncated_length] + "... [truncated due to excessive length]"
+    
+    # Prepare sources text for API call
+    sources_text = ""
+    for i, source in enumerate(valid_sources):
+        source_text = f"Fuente {i+1}: {source['source_medium']}\n"
+        source_text += f"Titular: {source['title']}\n"
+        source_text += f"Descripción: {source['scraped_description']}\n\n"
+        sources_text += source_text
+    
+    return sources_text
+
+def call_openai_api(client, system_message, user_message, group_id):
+    """Make the OpenAI API call with retry logic."""
+    max_retries = 3
+    retry_count = 0
+    valid_sources = []  # Placeholder for keeping track in the context of retries
+    
+    while retry_count < max_retries:
+        try:
+            print(f"ℹ️ Generating neutral analysis for group {group_id} (attempt {retry_count + 1})")
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            
+            result_json = json.loads(response.choices[0].message.content)
+            return result_json, None  # Success
+            
+        except Exception as e:
+            error_message = str(e)
+            
+            # Check for rate limit/quota errors
+            if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
+                print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
+                api_rate_limiter.force_cooldown()
+                return None, "rate_limit"
+            
+            # Handle token limit errors - this would need the valid_sources to be passed in
+            if "context_length_exceeded" in str(e) and len(valid_sources) > MIN_VALID_SOURCES:
+                # This is handled in the main function now
+                return None, "context_length"
+            
+            # Standard retry with backoff
+            retry_count += 1
+            print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {error_message}")
+            
+            if retry_count < max_retries:
+                wait_time = 2 ** retry_count  # 2, 4, 8 seconds
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"Max retries reached for group {group_id}, giving up")
+                import traceback
+                traceback.print_exc()
+                return None, "max_retries"
+
 def generate_neutral_analysis_single(group_info, is_update):
     """
     Process a single group for neutral analysis.
-    This is extracted from generate_neutral_analysis_batch to work with one group at a time.
+    This modularized version improves readability and ensures correct behavior.
     """
     if not group_info:
         return None
@@ -283,6 +500,7 @@ def generate_neutral_analysis_single(group_info, is_update):
     # Use the rate limiter instead of global variables
     api_rate_limiter.check_limit(group_id)
 
+    # Get API key and create client
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("ERROR: OPENAI_API_KEY environment variable not set.")
@@ -291,203 +509,78 @@ def generate_neutral_analysis_single(group_info, is_update):
     api_key = api_key.strip()
     client = OpenAI(api_key=api_key)
     
-    system_message = """
-    Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
-    de una misma noticia contada por diferentes medios. Tu tarea:
-
-    1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
-       informativo y capturar la esencia de la noticia.
-    
-    2. Crear una descripción neutral estructurada en párrafos cortos (máximo 50 palabras por párrafo), con un límite aproximado 
-       de 250 palabras en total. El primer párrafo debe contener la información más importante.
-    
-    3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
-    
-    4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, 
-       Internacional, Entretenimiento, Otros.
-       
-    5. Evaluar la relevancia de la noticia en una escala del 1 al 5, donde:
-       1 = Muy baja relevancia (interés muy local o limitado / publicidad o propaganda)
-       2 = Baja relevancia (interés limitado a ciertos grupos)
-       3 = Relevancia media (interés general pero sin gran impacto)
-       4 = Alta relevancia (interés amplio con posible impacto social/político/económico)
-       5 = Muy alta relevancia (gran impacto social/político/económico, noticia de primer nivel)
-
-    Devuelve SOLO un JSON con esta estructura (sin explicaciones adicionales):
-    {
-        "neutral_title": "...",
-        "neutral_description": "...",
-        "category": "...",
-        "relevance": X,
-        "source_ratings": [
-            {"source_medium": "...", "rating": X},
-            ...
-        ]
-    }
-    """
-    
     SOURCES_LIMIT = 16  # Maximum number of sources to process
+    
     try:
-        initial_sources = []
-        for source in sources:
-            if 'id' in source and 'title' in source and 'scraped_description' in source and 'source_medium' in source:
-                initial_sources.append(source)
-        
-        if len(initial_sources) < MIN_VALID_SOURCES:
-            print(f"⚠️ Not enough valid sources for group {group_id}. Skipping.")
+        # Step 1: Validate initial sources
+        initial_sources = validate_initial_sources(sources, group_id)
+        if not initial_sources:
             return None
             
-        # Select only one source per press medium (the most recently published)
-        sources_by_medium = {}
-        sources_to_delete = []
-        
-        for source in initial_sources:
-            medium = source.get('source_medium')
-            
-            # Check for date fields (try different possible field names)
-            published_date = source.get('pub_date') or source.get('created_at')
-            
-            if medium:
-                # If we already have a source for this medium
-                if medium in sources_by_medium:
-                    existing_source = sources_by_medium[medium]
-                    existing_date = existing_source.get('pub_date') or existing_source.get('created_at')
-                    
-                    # Compare dates to keep the most recent one
-                    if published_date and existing_date and published_date > existing_date:
-                        # This source is newer, so the existing one should be deleted
-                        sources_to_delete.append(existing_source)
-                        sources_by_medium[medium] = source
-                    else:
-                        # The existing source is newer or no date comparison possible
-                        sources_to_delete.append(source)
-                else:
-                    # First source for this medium
-                    sources_by_medium[medium] = source
-        
-        # Use deduplicated sources 
-        valid_sources = list(sources_by_medium.values())
+        # Step 2: Select one source per media (deduplicate)
+        valid_sources, sources_to_deduplicate = deduplicate_sources_by_medium(initial_sources)
         print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources for group {group_id}")
-
-        # If we're updating an existing neutralization, check if update is really needed
+        
+        # Step 3: For updates, check if update is necessary
         if is_update:
-            # Retrieve the existing document to compare sources
-            try:
-                db = initialize_firebase()
-                neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                neutral_doc = neutral_doc_ref.get()
-                
-                if neutral_doc.exists:
-                    existing_data = neutral_doc.to_dict()
-                    existing_source_ids = set(existing_data.get('source_ids', [])) # Sources in database
-                    current_source_ids = {source.get('id') for source in valid_sources if source.get('id')}
-                    
-                    # Get number of sources in each set
-                    existing_count = len(existing_source_ids)
-                    current_count = len(current_source_ids)
-                    
-                    # Calculate how many sources have changed (added or removed)
-                    changed_sources = existing_source_ids.symmetric_difference(current_source_ids)
-                    change_ratio = len(changed_sources) / max(existing_count, 1)
-                    
-                    # Define thresholds for significant source count increase
-                    significant_increase = (
-                        (existing_count >= 3 and existing_count < 6 and current_count >= 6) or
-                        (existing_count >= 6 and existing_count < 9 and current_count >= 9) or
-                        (existing_count >= 9 and existing_count < 12 and current_count >= 12)
-                    )
-                    # Skip update if neither condition is met
-                    if change_ratio < 0.5 and not significant_increase:
-                        print(f"ℹ️ Skipping update for group {group_id}: Only {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), not significant.")
-                        
-                        # Find sources in existing but not in current - mark for unassignment
-                        removed_sources = existing_source_ids - current_source_ids
-                        if removed_sources:
-                            if str(group_id) not in group_dict:
-                                group_dict[str(group_id)] = []
-                            group_dict[str(group_id)].extend(list(removed_sources))
-                            print(f"ℹ️ Marked {len(removed_sources)} sources for unassignment from group {group_id}")
-                        
-                        # Return existing data to avoid regeneration
-                        skipped = True
-                        return existing_data, group_dict, skipped
-                    else:
-                        print(f"ℹ️ Update needed for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}), significant: {significant_increase}")
-                        if sources_to_delete:
-                            delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id)
-            except Exception as e:
-                print(f"Error checking update necessity: {str(e)}")
-                # Continue with update in case of error
-        elif sources_to_delete:
-            delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id)
+            existing_data_to_keep, update_dict = check_if_update_needed(group_id, valid_sources)
+            if existing_data_to_keep: # Keep the existing data
+                # No significant changes, skip update and return existing data
+                skipped = True
+                if update_dict: 
+                    group_dict[str(group_id)] = list(update_dict.keys())
+                return existing_data_to_keep, group_dict, skipped
+            elif sources_to_deduplicate: # Deduplicate sources and proceed with update
+                delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
+        elif sources_to_deduplicate:
+            # For new neutralizations, just delete invalid sources
+            delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
 
-        # Apply source limit after deduplication
-        if len(valid_sources) > SOURCES_LIMIT:
-            # Mark removed sources for unassignment
-            removed_sources = valid_sources[SOURCES_LIMIT:]
-            for source in removed_sources:
-                source_id = source.get('id')
-                if source_id:
-                    if str(group_id) not in group_dict:
-                        group_dict[str(group_id)] = []
-                    if source_id not in group_dict[str(group_id)]:
-                        group_dict[str(group_id)].append(source_id)
-            
-            valid_sources = valid_sources[:SOURCES_LIMIT]
-            print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources, marked {len(removed_sources)} excess sources for unassignment")
-            
-        if len(valid_sources) < MIN_VALID_SOURCES:
-            # Handle case with insufficient sources after deduplication
-            print(f"⚠️ Not enough valid sources after deduplication for group {group_id}. Skipping.")
-            
-            # Unassign the group from any remaining source
-            if len(valid_sources) == 1:
-                remaining_source = valid_sources[0]
-                source_id = remaining_source.get('id')
-                if source_id:
-                    try:
-                        db = initialize_firebase()
-                        db.collection('news').document(source_id).update({
-                            'group': None,
-                            'updated_at': None
-                        })
-                        # Also handle neutral news doc
-                        if is_update:
-                            neutral_doc_ref = db.collection('neutral_news').document(str(group_id))
-                            neutral_doc_ref.update({
-                                'source_ids': firestore.ArrayRemove([source_id])
-                            })
-                        # Add to dictionary
-                        if str(group_id) not in group_dict:
-                            group_dict[str(group_id)] = []
-                        group_dict[str(group_id)].append(source_id)
-                        print(f"  Unassigned group from the only remaining source {source_id}")
-                    except Exception as e:
-                        print(f"  Failed to unassign group from source {source_id}: {str(e)}")
-            
+        # Step 4: Apply source limits and handle insufficient sources
+        valid_sources, group_dict = apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT)
+        if not valid_sources:
             return None
+            
+        # Step 5: Prepare sources for API call
+        system_message = """
+        Eres un analista de noticias imparcial. Te voy a pasar varios titulares y descripciones
+        de una misma noticia contada por diferentes medios. Tu tarea:
 
-        # Calculate average description length for this group
-        avg_desc_length = sum(len(s['scraped_description']) for s in valid_sources) / len(valid_sources)
+        1. Generar un titular neutral CONCISO (entre 8-14 palabras máximo). El titular debe ser directo, 
+           informativo y capturar la esencia de la noticia.
         
-        # Handle outliers (sources with extremadamente long descriptions)
-        for source in valid_sources:
-            desc_len = len(source['scraped_description'])
-            if desc_len > (avg_desc_length * 3) and desc_len > 10000:
-                truncated_length = int(max(avg_desc_length * 2, 10000))
-                source['scraped_description'] = source['scraped_description'][:truncated_length] + "... [truncated due to excessive length]"
+        2. Crear una descripción neutral estructurada en párrafos cortos (máximo 50 palabras por párrafo), con un límite aproximado 
+           de 250 palabras en total. El primer párrafo debe contener la información más importante.
         
-        # Prepare sources text for API call
-        sources_text = ""
-        for i, source in enumerate(valid_sources):
-            source_text = f"Fuente {i+1}: {source['source_medium']}\n"
-            source_text += f"Titular: {source['title']}\n"
-            source_text += f"Descripción: {source['scraped_description']}\n\n"
-            sources_text += source_text
+        3. Evaluar cada fuente con una puntuación de neutralidad (0 a 100).
         
+        4. Asignar una categoría entre: Economía, Política, Ciencia, Tecnología, Cultura, Sociedad, Deportes, 
+           Internacional, Entretenimiento, Otros.
+           
+        5. Evaluar la relevancia de la noticia en una escala del 1 al 5, donde:
+           1 = Muy baja relevancia (interés muy local o limitado / publicidad o propaganda)
+           2 = Baja relevancia (interés limitado a ciertos grupos)
+           3 = Relevancia media (interés general pero sin gran impacto)
+           4 = Alta relevancia (interés amplio con posible impacto social/político/económico)
+           5 = Muy alta relevancia (gran impacto social/político/económico, noticia de primer nivel)
+
+        Devuelve SOLO un JSON con esta estructura (sin explicaciones adicionales):
+        {
+            "neutral_title": "...",
+            "neutral_description": "...",
+            "category": "...",
+            "relevance": X,
+            "source_ratings": [
+                {"source_medium": "...", "rating": X},
+                ...
+            ]
+        }
+        """
+        
+        sources_text = prepare_sources_for_api(valid_sources)
         user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
         
-        # Call OpenAI API with retries
+        # Step 6: Call OpenAI API with retries and handle token limits
         max_retries = 3
         retry_count = 0
         result = None
@@ -515,7 +608,6 @@ def generate_neutral_analysis_single(group_info, is_update):
                 # Check for rate limit/quota errors
                 if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
                     print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
-                    # Use the rate limiter's force_cooldown method instead of manipulating globals
                     api_rate_limiter.force_cooldown()
                     return None
                 
@@ -555,7 +647,7 @@ def generate_neutral_analysis_single(group_info, is_update):
                     print(f"Max retries reached for group {group_id}, giving up")
                     import traceback
                     traceback.print_exc()
-        
+            
         return result, group_dict
         
     except Exception as e:
@@ -564,13 +656,13 @@ def generate_neutral_analysis_single(group_info, is_update):
         traceback.print_exc()
         return None
     
-def delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, group_id):
+def delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id):
     """
     Delete invalid sources from the database.
     This is called after processing all groups to ensure that we don't hit rate limits.
     """
     db = initialize_firebase()
-    for source in sources_to_delete:
+    for source in sources_to_deduplicate:
         source_id = source.get('id')
         if source_id:
             try:
@@ -592,7 +684,7 @@ def delete_invalid_sources_from_db(is_update, sources_to_delete, group_dict, gro
                 print(f"  Failed to update news item {source_id}: {str(e)}")
     
 
-# Keep the batch function as a wrapper that calls the single function for each item
+# Keep the batch function as a wrapper that calls generate_neutral_analysis_single for each item
 def generate_neutral_analysis_batch(group_batch, is_update):
     """Wrapper function that calls generate_neutral_analysis_single for each item in batch"""
     if not group_batch:
