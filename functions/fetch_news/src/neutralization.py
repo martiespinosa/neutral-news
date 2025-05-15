@@ -175,7 +175,7 @@ def neutralize_and_more(news_groups, batch_size=5):
                 if isinstance(response, tuple) and len(response) == 2:
                     result, sources_to_unassign = response
                 elif isinstance(response, tuple) and len(response) == 3:
-                    skipped = True
+                    result, sources_to_unassign, skipped = response
                 else:
                     result = response
                     sources_to_unassign = {}
