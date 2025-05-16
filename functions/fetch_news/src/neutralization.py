@@ -246,10 +246,6 @@ def neutralize_and_more(groups_prepared):
             nonlocal skipped_update_count, skipped_update_groups, updated_neutral_scores_count, updated_neutral_scores_news
             nonlocal rate_limited_count, rate_limited_groups
             
-            # Add tracking for insufficient sources
-            insufficient_sources_count = 0
-            insufficient_sources_groups = []
-            
             worker_count = min(worker_count, len(groups_to_update) + len(groups_to_neutralize))
             print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {worker_count} workers")
             
@@ -279,12 +275,6 @@ def neutralize_and_more(groups_prepared):
                         rate_limited_groups.append(group_id)
                         continue
                         
-                    # Check if this group had insufficient sources
-                    if result.get("insufficient_sources"):
-                        insufficient_sources_count += 1
-                        insufficient_sources_groups.append(group_id)
-                        continue
-                        
                     if result["success"]:
                         is_update = result.get("is_update", False)
                         
@@ -306,10 +296,6 @@ def neutralize_and_more(groups_prepared):
                             count, news_ids = result["scores_result"]
                             updated_neutral_scores_count += count
                             updated_neutral_scores_news.extend(news_ids)
-        
-            # Print information about insufficient sources
-            if insufficient_sources_count > 0:
-                print(f"⚠️ {insufficient_sources_count} groups skipped due to insufficient sources: {insufficient_sources_groups}")
         
         # First, process with conservative worker count - using the sorted groups
         process_all_groups(sorted_groups_to_update, sorted_groups_to_neutralize, INITIAL_WORKERS)
@@ -341,13 +327,11 @@ def neutralize_and_more(groups_prepared):
                 process_all_groups(rate_limited_updates, rate_limited_neutralizations, 1)
         
         print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, skipped {skipped_update_count} updates, rate-limited {rate_limited_count}")
-        print(f"Skipped {insufficient_sources_count} groups due to insufficient sources after deduplication")
         print(f"Updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
         print(f"Groups updated with new neutralization: {updated_groups}")
         print(f"Groups with skipped updates: {skipped_update_groups}")
         print(f"Rate-limited groups (retried): {rate_limited_groups}")
-        print(f"Groups skipped due to insufficient sources: {insufficient_sources_groups}")
         return neutralized_count + updated_count
 
     except Exception as e:
