@@ -1,6 +1,6 @@
 import os
 import traceback
-from .storage import update_news_embedding, get_group_item_count, get_group_items
+from .storage import update_news_embedding, get_group_item_count, get_group_items, get_all_group_ids
 import pandas as pd
 import numpy as np
 
@@ -53,7 +53,7 @@ def get_sentence_transformer_model(retry_count=3):
             # print("ℹ️ Falling back to downloading the model.")  # Uncommented this line
             # If loading from bundled path fails, proceed to download logic below
     return _model
-def group_news(news_list: list) -> list:
+def group_news(news_for_grouping: list) -> list:
     """
     Groups news based on their semantic similarity
     """
@@ -62,7 +62,7 @@ def group_news(news_list: list) -> list:
         _load_nlp_modules()
         
         # Step 1: Setup DataFrame and handle references
-        df, has_reference_news, should_return_early, early_result = setup_news_dataframe(news_list)
+        df, has_reference_news, should_return_early, early_result = setup_news_dataframe(news_for_grouping)
         if should_return_early:
             return early_result
         
@@ -97,20 +97,18 @@ def group_news(news_list: list) -> list:
             return df[result_columns].to_dict(orient='records')
         return []
 
-def setup_news_dataframe(news_list: list) -> tuple:
+def setup_news_dataframe(news_for_grouping: list) -> tuple:
     """
     Initial setup of the DataFrame and handling of reference news
     Returns a tuple of (df, has_reference_news, should_return_early, early_result)
     """
-    print("ℹ️ Converting List to DataFrame...")
-    df = pd.DataFrame(news_list)
+    df = pd.DataFrame(news_for_grouping)
 
     if "id" not in df.columns or "title" not in df.columns or "scraped_description" not in df.columns:
         raise ValueError("The JSON must contain the columns 'id', 'title' and 'scraped_description' with the text of the news")
     
     df["group"] = None 
     
-    print("ℹ️ Checking for existing groups...")
     has_reference_news = "existing_group" in df.columns
     if has_reference_news:
         df.loc[df["existing_group"].notna(), "group"] = df.loc[df["existing_group"].notna(), "existing_group"] # Assign existing groups to 'group' column
@@ -150,7 +148,6 @@ def process_embeddings(df: pd.DataFrame) -> tuple:
     df_needing_embeddings = pd.DataFrame(get_news_not_embedded(df.copy()))
 
     if not df_needing_embeddings.empty:
-        print(f"ℹ️ Found {len(df_needing_embeddings)} items needing new embeddings.")
         print("ℹ️ Loading embeddings model...")
         model = get_sentence_transformer_model()
         
@@ -281,15 +278,15 @@ def assign_group_ids(df, has_reference_news):
     MIN_SUBDIVISION_SIZE = 5  # Minimum cluster size needed for subdivision
     SIMILARITY_THRESHOLD = 0.85  # Higher threshold for stricter clustering
     
-    # Track assigned groups to avoid duplicates
-    assigned_groups = set()
     
     # Handle DBSCAN outliers first
     if has_reference_news:
         df.loc[(df['temp_group'] == -1) & (df['existing_group'].isna()), 'group'] = None
     else:
         df.loc[df['temp_group'] == -1, 'group'] = None
-        
+    
+    # Initialize a set to track assigned groups
+    all_group_ids = get_all_group_ids()
     # Process each DBSCAN cluster
     for db_cluster_id in df['temp_group'].dropna().unique():
         if db_cluster_id == -1:  # Skip outliers (already handled)
@@ -306,11 +303,11 @@ def assign_group_ids(df, has_reference_news):
         if has_reference_news:
             _process_cluster_with_references(df, cluster_items, db_cluster_id, 
                                             MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, 
-                                            SIMILARITY_THRESHOLD, assigned_groups)
+                                            SIMILARITY_THRESHOLD, all_group_ids)
         else:
             _process_cluster_without_references(df, cluster_items, db_cluster_id, 
-                                              MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
-    
+                                              MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, all_group_ids)
+
     # Ensure reference items keep their original groups
     if has_reference_news:
         df.loc[df['is_reference'] == True, 'group'] = df['existing_group']
@@ -321,14 +318,14 @@ def assign_group_ids(df, has_reference_news):
 
 def _process_cluster_with_references(df, cluster_items, db_cluster_id, 
                                     MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, 
-                                    SIMILARITY_THRESHOLD, assigned_groups):
+                                    SIMILARITY_THRESHOLD, all_group_ids):
     """Process a cluster that has reference news items."""
     # Find reference items in this cluster
     reference_items = cluster_items[cluster_items['is_reference'] == True]
     
     if reference_items.empty:
         # No reference items - check if subdivision is needed first
-        next_group_id = _get_next_available_group_id(df)
+        next_group_id = _get_next_available_group_id(df, all_group_ids)
         
         if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
             # Large enough for subdivision - directly create subgroups
@@ -367,7 +364,7 @@ def _process_cluster_with_references(df, cluster_items, db_cluster_id,
             
             if similarity < SIMILARITY_THRESHOLD:
                 # Low similarity - create a new group
-                next_group_id = _get_next_available_group_id(df)
+                next_group_id = _get_next_available_group_id(df, all_group_ids)
                 df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
                 target_group = next_group_id
                 print(f"ℹ️ Low similarity ({similarity:.3f}) - created new group {next_group_id}")
@@ -376,34 +373,37 @@ def _process_cluster_with_references(df, cluster_items, db_cluster_id,
                 df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = target_group
                 print(f"ℹ️ High similarity ({similarity:.3f}) - assigned to group {target_group}")
                 
-        assigned_groups.add(target_group)
+        all_group_ids.add(target_group)
 
 
 def _process_cluster_without_references(df, cluster_items, db_cluster_id, 
-                                       MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE):
+                                       MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE, all_group_ids):
     """Process a cluster when there are no reference news items."""
         # Check if we need to subdivide this group
-    next_group_id = _get_next_available_group_id(df)
+    next_group_id = _get_next_available_group_id(df, all_group_ids)
     if len(cluster_items) > MAX_GROUP_SIZE and len(cluster_items) > MIN_SUBDIVISION_SIZE:
         _subdivide_group(df, cluster_items, next_group_id, MAX_GROUP_SIZE, MIN_SUBDIVISION_SIZE)
     else: 
         df.loc[(df['temp_group'] == db_cluster_id) & (df['group'].isna()), 'group'] = next_group_id
         print(f"ℹ️ Assigned DBSCAN cluster {db_cluster_id} to new group {next_group_id}")
 
-def _get_next_available_group_id(df):
+def _get_next_available_group_id(df, all_group_ids):
     """Calculate the next available group ID, ignoring 7-digit subdivision IDs."""
-    # Get maximum existing group ID
+    # Get maximum existing group ID from database
     max_existing_group = 0
-    if 'existing_group' in df.columns and not df['existing_group'].dropna().empty:
-        # Filter to only numeric values and exclude 7-digit IDs
-        numeric_existing = pd.to_numeric(df['existing_group'].dropna(), errors='coerce').dropna()
-        if not numeric_existing.empty:
+    
+    # Retrieve all group IDs from the database
+    if all_group_ids:
+        # Convert to numeric, ignoring non-numeric values - convert set to list first
+        numeric_ids = pd.to_numeric(pd.Series(list(all_group_ids)), errors='coerce').dropna()
+        
+        if not numeric_ids.empty:
             # Filter out 7-digit IDs (subdivision IDs)
-            regular_ids = numeric_existing[numeric_existing < 1000000]
+            regular_ids = numeric_ids[numeric_ids < 1000000]
             if not regular_ids.empty:
                 max_existing_group = regular_ids.max()
     
-    # Get maximum assigned new group ID
+    # Also check the current DataFrame for any newly assigned IDs not yet in the database
     max_assigned_group = 0
     if 'group' in df.columns and not df['group'].dropna().empty:
         # Filter to only numeric values and exclude 7-digit IDs
@@ -808,5 +808,5 @@ def get_news_not_embedded(input_df: pd.DataFrame) -> list:
 
             news_needing_embedding.append(data_dict)
             
-    print(f"get_news_not_embedded: Identified {len(news_needing_embedding)} news items to process for embeddings.")
+    print(f"ℹ️ Identified {len(news_needing_embedding)} news items to process for embeddings.")
     return news_needing_embedding
