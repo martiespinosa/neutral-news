@@ -13,7 +13,7 @@ gcloud run deploy fetch-news-service `
   --region us-central1 `
   --memory 4096M `
   --cpu 2 `
-  --timeout 540 `
+  --timeout 1800 `
   --set-secrets=OPENAI_API_KEY=openai-api-key:latest `
   --allow-unauthenticated `
   --cpu-boost `

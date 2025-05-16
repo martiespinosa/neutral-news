@@ -137,7 +137,7 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    RECENT_GROUPS_HOURS = 24 # Number of hours to look back for recent groups
+    RECENT_GROUPS_HOURS = 48 # Number of hours to look back for recent groups
     REFERENCE_NEWS_HOURS = 48 # Number of hours to look back for reference news
 
     # Get recent unique group IDs

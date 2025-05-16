@@ -3,6 +3,8 @@ import os, json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from threading import Lock
+import queue
+import datetime
 
 from src.storage import store_neutral_news, update_news_with_neutral_scores, update_existing_neutral_news
 from .config import initialize_firebase
@@ -16,11 +18,25 @@ class RateLimiter:
         self.call_count = 0
         self.call_time = time.time()
         self.lock = Lock()
+        self.rate_limited_queue = queue.Queue()
+        self.global_cooldown = False
+        self.cooldown_until = 0
     
     def check_limit(self, group_id="unknown"):
         """Check if we're over the rate limit and handle accordingly"""
         with self.lock:
             current_time = time.time()
+            
+            # If we're in global cooldown, sleep until cooldown period ends
+            if self.global_cooldown and current_time < self.cooldown_until:
+                sleep_time = self.cooldown_until - current_time
+                print(f"🛑 Global cooldown active: sleeping for {sleep_time:.2f}s before processing group {group_id}")
+                time.sleep(sleep_time)
+                self.global_cooldown = False
+                self.call_count = 0
+                self.call_time = time.time()
+                return True
+                
             elapsed = current_time - self.call_time
             
             # Reset counter after 60 seconds
@@ -37,12 +53,30 @@ class RateLimiter:
                 self.call_time = time.time()
                 
             self.call_count += 1
+            return False
 
-    def force_cooldown(self):
+    def force_cooldown(self, minutes=1):
         """Force a cooldown period after hitting an API limit"""
         with self.lock:
-            self.call_time = time.time()
-            self.call_count = self.calls_per_minute  # This will trigger a sleep on the next call
+            self.global_cooldown = True
+            self.cooldown_until = time.time() + (minutes * 60)
+            print(f"⛔ Enforcing global cooldown for {minutes} minute(s) until {time.strftime('%H:%M:%S', time.localtime(self.cooldown_until))}")
+    
+    def queue_rate_limited_group(self, group_info):
+        """Add a rate-limited group to the queue for later processing"""
+        self.rate_limited_queue.put(group_info)
+        group_id = group_info.get('group', 'unknown')
+        print(f"📋 Added group {group_id} to rate-limited queue for later processing")
+    
+    def has_rate_limited_groups(self):
+        """Check if there are any rate-limited groups to process"""
+        return not self.rate_limited_queue.empty()
+    
+    def get_rate_limited_group(self):
+        """Get the next rate-limited group to process"""
+        if not self.rate_limited_queue.empty():
+            return self.rate_limited_queue.get()
+        return None
 
 # Create a single instance of the rate limiter
 api_rate_limiter = RateLimiter()
@@ -71,6 +105,7 @@ def neutralize_and_more(groups_prepared):
         to_neutralize_count = 0
         to_neutralize_ids = []
         
+        # First classify all groups
         for group in groups_prepared:
             group_number = group.get('group')
             if group_number is not None:
@@ -120,6 +155,12 @@ def neutralize_and_more(groups_prepared):
             to_neutralize_count += 1
             to_neutralize_ids.append(group_number)
 
+        # Sort groups by recency (newest first)
+        sorted_groups_to_update = sort_groups_by_recency(groups_to_update)
+        sorted_groups_to_neutralize = sort_groups_by_recency(groups_to_neutralize)
+        
+        print(f"Sorted {len(sorted_groups_to_update)} groups to update and {len(sorted_groups_to_neutralize)} groups to neutralize by recency")
+        
         neutralized_count = 0
         neutralized_groups = []
         
@@ -131,14 +172,17 @@ def neutralize_and_more(groups_prepared):
         
         print(f"Groups unchanged: {unchanged_group_count}. IDs: {unchanged_group_ids}")
         print(f"Groups changed and will be updated: {changed_group_count}. IDs: {changed_group_ids}")
-        print(f"Groups to neutralize: {len(groups_to_neutralize)}. IDs: {to_neutralize_ids}")
+        print(f"Groups to neutralize: {len(sorted_groups_to_neutralize)}. IDs: {to_neutralize_ids}")
         
-        # Maximum number of workers for the thread pool
-        # OpenAI API can handle multiple concurrent requests - adjust based on your rate limits
-        MAX_WORKERS = 50  # Starting higher - can be adjusted based on API behavior
+        # More conservative initial worker count to prevent immediate rate limiting
+        INITIAL_WORKERS = 10  # Start with fewer workers
+        MAX_WORKERS = 25      # Maximum number of workers (reduced from 50)
         
         skipped_update_count = 0
         skipped_update_groups = []
+        
+        rate_limited_count = 0
+        rate_limited_groups = []
 
         # Define a function to process a single group (either update or neutralize)
         def process_group(group_info, is_update=False):
@@ -151,7 +195,9 @@ def neutralize_and_more(groups_prepared):
                 response = generate_neutral_analysis_single(group_info, is_update)
                 
                 if response is None:
-                    return {"success": False, "error": "API limit or quota exceeded", "group": group}
+                    # Add to rate-limited queue for later processing
+                    api_rate_limiter.queue_rate_limited_group(group_info)
+                    return {"success": False, "error": "API limit or quota exceeded", "group": group, "rate_limited": True}
                 
                 # Unpack the response
                 skipped = False
@@ -194,57 +240,114 @@ def neutralize_and_more(groups_prepared):
                 traceback.print_exc()
                 return {"success": False, "error": str(e), "group": group_info.get('group')}
         
-        # Process all groups asynchronously using ThreadPoolExecutor
-        MAX_WORKERS = min(MAX_WORKERS, len(groups_to_update) + len(groups_to_neutralize))
-        print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {MAX_WORKERS} workers")
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all update tasks
-            update_futures = {
-                executor.submit(process_group, group, True): group 
-                for group in groups_to_update
-            }
+        def process_all_groups(groups_to_update, groups_to_neutralize, worker_count):
+            """Process all groups with the specified worker count"""
+            nonlocal neutralized_count, neutralized_groups, updated_count, updated_groups
+            nonlocal skipped_update_count, skipped_update_groups, updated_neutral_scores_count, updated_neutral_scores_news
+            nonlocal rate_limited_count, rate_limited_groups
             
-            # Submit all neutralization tasks  
-            neutralize_futures = {
-                executor.submit(process_group, group, False): group
-                for group in groups_to_neutralize
-            }
+            # Add tracking for insufficient sources
+            insufficient_sources_count = 0
+            insufficient_sources_groups = []
             
-            # Process update results as they complete
-            for future in as_completed(update_futures):
-                result = future.result()
-                if result["success"]:
-                    if result["skipped"]:
-                        # This was a skipped update
-                        skipped_update_count += 1
-                        skipped_update_groups.append(result["group"])
-                    else:
-                        # This was a completed update
-                        updated_count += 1
-                        updated_groups.append(result["group"])
+            worker_count = min(worker_count, len(groups_to_update) + len(groups_to_neutralize))
+            print(f"ℹ️ Processing {len(groups_to_update)} updates and {len(groups_to_neutralize)} new neutralizations with {worker_count} workers")
+            
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                # Submit all update tasks
+                update_futures = {
+                    executor.submit(process_group, group, True): group 
+                    for group in groups_to_update
+                }
+                
+                # Submit all neutralization tasks  
+                neutralize_futures = {
+                    executor.submit(process_group, group, False): group
+                    for group in groups_to_neutralize
+                }
+                
+                all_futures = {**update_futures, **neutralize_futures}
+                
+                # Process results as they complete
+                for future in as_completed(all_futures):
+                    result = future.result()
+                    group_id = result.get("group")
+                    
+                    # Check if this group was rate limited
+                    if result.get("rate_limited"):
+                        rate_limited_count += 1
+                        rate_limited_groups.append(group_id)
+                        continue
+                        
+                    # Check if this group had insufficient sources
+                    if result.get("insufficient_sources"):
+                        insufficient_sources_count += 1
+                        insufficient_sources_groups.append(group_id)
+                        continue
+                        
+                    if result["success"]:
+                        is_update = result.get("is_update", False)
+                        
+                        if is_update:
+                            if result.get("skipped"):
+                                # This was a skipped update
+                                skipped_update_count += 1
+                                skipped_update_groups.append(group_id)
+                            else:
+                                # This was a completed update
+                                updated_count += 1
+                                updated_groups.append(group_id)
+                        else:
+                            # This was a new neutralization
+                            neutralized_count += 1
+                            neutralized_groups.append(group_id)
 
-                        if result["scores_result"]:
+                        if result.get("scores_result"):
                             count, news_ids = result["scores_result"]
                             updated_neutral_scores_count += count
                             updated_neutral_scores_news.extend(news_ids)
-            
-            # Process neutralization results as they complete
-            for future in as_completed(neutralize_futures):
-                result = future.result()
-                if result["success"]:
-                    neutralized_count += 1
-                    neutralized_groups.append(result["group"])
-                    
-                    if result.get("scores_result"):
-                        count, news_ids = result["scores_result"]
-                        updated_neutral_scores_count += count
-                        updated_neutral_scores_news.extend(news_ids)
         
-        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, skipped {skipped_update_count} updates, updated {updated_neutral_scores_count} regular news with neutral scores")
+            # Print information about insufficient sources
+            if insufficient_sources_count > 0:
+                print(f"⚠️ {insufficient_sources_count} groups skipped due to insufficient sources: {insufficient_sources_groups}")
+        
+        # First, process with conservative worker count - using the sorted groups
+        process_all_groups(sorted_groups_to_update, sorted_groups_to_neutralize, INITIAL_WORKERS)
+        
+        # Process rate-limited groups if any
+        if api_rate_limiter.has_rate_limited_groups():
+            print(f"🔄 Processing {rate_limited_count} rate-limited groups with reduced concurrency")
+            
+            # Collect rate-limited groups
+            rate_limited_updates = []
+            rate_limited_neutralizations = []
+            
+            while api_rate_limiter.has_rate_limited_groups():
+                group_info = api_rate_limiter.get_rate_limited_group()
+                if group_info:
+                    # Wait between processing rate-limited groups
+                    time.sleep(1)  # Add a small delay between each group
+                    
+                    group_id = group_info.get('group')
+                    # Check if it's an update or new neutralization
+                    if group_id in changed_group_ids:
+                        rate_limited_updates.append(group_info)
+                    else:
+                        rate_limited_neutralizations.append(group_info)
+            
+            # Process with very conservative settings (1 worker)
+            if rate_limited_updates or rate_limited_neutralizations:
+                print(f"⚠️ Retrying {len(rate_limited_updates)} updates and {len(rate_limited_neutralizations)} neutralizations with 1 worker")
+                process_all_groups(rate_limited_updates, rate_limited_neutralizations, 1)
+        
+        print(f"Created {neutralized_count}, updated {updated_count} neutral news groups, skipped {skipped_update_count} updates, rate-limited {rate_limited_count}")
+        print(f"Skipped {insufficient_sources_count} groups due to insufficient sources after deduplication")
+        print(f"Updated {updated_neutral_scores_count} regular news with neutral scores")
         print(f"Neutralized groups: {neutralized_groups}")
         print(f"Groups updated with new neutralization: {updated_groups}")
         print(f"Groups with skipped updates: {skipped_update_groups}")
-        print(f"Updated neutral scores for news: {updated_neutral_scores_news}")
+        print(f"Rate-limited groups (retried): {rate_limited_groups}")
+        print(f"Groups skipped due to insufficient sources: {insufficient_sources_groups}")
         return neutralized_count + updated_count
 
     except Exception as e:
@@ -252,6 +355,35 @@ def neutralize_and_more(groups_prepared):
         import traceback
         traceback.print_exc()
         return 0
+
+def sort_groups_by_recency(groups):
+    """
+    Sort groups by the most recent publication date among their sources.
+    
+    Args:
+        groups: List of group dictionaries
+        
+    Returns:
+        List of groups sorted by recency (newest first)
+    """
+    if not groups:
+        return []
+        
+    def get_most_recent_date(group):
+        try:
+            most_recent = None
+            for source in group.get('sources', []):
+                # Try pub_date first, then fall back to created_at
+                date = source.get('pub_date') or source.get('created_at')
+                if date and (most_recent is None or date > most_recent):
+                    most_recent = date
+            return most_recent or datetime.datetime.min
+        except Exception:
+            return datetime.datetime.min
+    
+    # Sort groups by most recent date (newest first)
+    import datetime
+    return sorted(groups, key=get_most_recent_date, reverse=True)
 
 def validate_initial_sources(sources, group_id):
     """Validate and filter initial sources."""
@@ -427,7 +559,6 @@ def call_openai_api(client, system_message, user_message, group_id):
     """Make the OpenAI API call with retry logic."""
     max_retries = 3
     retry_count = 0
-    valid_sources = []  # Placeholder for keeping track in the context of retries
     
     while retry_count < max_retries:
         try:
@@ -450,24 +581,15 @@ def call_openai_api(client, system_message, user_message, group_id):
             
             # Check for rate limit/quota errors
             if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
-                if "rate_limit" in error_message:
-                    # This is a rate limit error, handle it
-                    print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
-                if "insufficient_quota" in error_message:
-                    # This is a quota error, handle it
-                    print(f"⛔ Insufficient quota for group {group_id}. Stopping processing.")
-                if "429" in error_message:
-                    # This is a 429 error, handle it
-                    print(f"⛔ 429 error for group {group_id}. Stopping processing.")
-                # Print Stack Trace
+                # More aggressive cooldown (2 minutes instead of just hitting force_cooldown)
+                print(f"⛔ Rate limit or quota exceeded for group {group_id}. Enforcing 2-minute cooldown.")
+                api_rate_limiter.force_cooldown(minutes=2)
                 import traceback
                 traceback.print_exc()
-                api_rate_limiter.force_cooldown()
                 return None, "rate_limit"
             
-            # Handle token limit errors - this would need the valid_sources to be passed in
-            if "context_length_exceeded" in str(e) and len(valid_sources) > MIN_VALID_SOURCES:
-                # This is handled in the main function now
+            # Handle token limit errors
+            if "context_length_exceeded" in str(e):
                 return None, "context_length"
             
             # Standard retry with backoff
@@ -497,8 +619,10 @@ def generate_neutral_analysis_single(group_info, is_update):
     group_id = group_info.get('group', 'unknown')
     sources = group_info.get('sources', [])
     
-    # Use the rate limiter instead of global variables
-    api_rate_limiter.check_limit(group_id)
+    # Use the rate limiter and check if we need to delay
+    if api_rate_limiter.check_limit(group_id):
+        # If we had to enforce a cooldown, re-check the limit
+        api_rate_limiter.check_limit(group_id)
 
     # Get API key and create client
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -523,17 +647,15 @@ def generate_neutral_analysis_single(group_info, is_update):
         # Step 3: For updates, check if update is necessary
         if is_update:
             existing_data_to_keep, update_dict = check_if_update_needed(group_id, valid_sources)
-            if existing_data_to_keep: # Keep the existing data
-                # No significant changes, skip update and return existing data
+            if existing_data_to_keep:
                 skipped = True
                 if update_dict: 
                     group_dict[str(group_id)] = list(update_dict.keys())
                 return existing_data_to_keep, group_dict, skipped
-            elif sources_to_deduplicate: # Deduplicate sources and proceed with update
+            elif sources_to_deduplicate:
                 delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
                 print(f"ℹ️ Deduplicated sources for group {group_id} during update. Selected {len(valid_sources)} valid sources from {len(initial_sources)} original sources.")
         elif sources_to_deduplicate:
-            # For new neutralizations, just delete invalid sources
             delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
             print(f"ℹ️ Deduplicated sources for group {group_id} during update. Selected {len(valid_sources)} valid sources from {len(initial_sources)} original sources.")
 
@@ -581,74 +703,44 @@ def generate_neutral_analysis_single(group_info, is_update):
         sources_text = prepare_sources_for_api(valid_sources)
         user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
         
-        # Step 6: Call OpenAI API with retries and handle token limits
-        max_retries = 3
-        retry_count = 0
-        result = None
+        # Step 6: Call OpenAI API
+        result, error = call_openai_api(client, system_message, user_message, group_id)
         
-        while retry_count < max_retries:
-            try:
-                print(f"ℹ️ Generating neutral analysis for group {group_id} (attempt {retry_count + 1})")
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": user_message}
-                    ],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
-                
-                result_json = json.loads(response.choices[0].message.content)
-                result = result_json
-                break  # Success
-                
-            except Exception as e:
-                error_message = str(e)
-                
-                # Check for rate limit/quota errors
-                if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
-                    print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
-                    api_rate_limiter.force_cooldown()
-                    return None
-                
-                # Handle token limit errors
-                if "context_length_exceeded" in str(e) and len(valid_sources) > MIN_VALID_SOURCES:
-                    # Take just 3 shortest sources with aggressive truncation
-                    valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
-                    
-                    sources_text = ""
-                    for i in range(min(3, len(valid_sources))):
-                        source = valid_sources[i]
-                        sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
-                        sources_text += f"Titular: {source['title']}\n"
-                        
-                        # Very aggressive truncation
-                        desc = source['scraped_description']
-                        if i == 0 and len(desc) > 5000:
-                            desc = desc[:5000] + "... [truncated]"
-                        elif i == 1 and len(desc) > 3000:
-                            desc = desc[:3000] + "... [truncated]"
-                            
-                        sources_text += f"Descripción: {desc}\n\n"
-                    
-                    user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
-                    print(f"⚠️ Emergency reduction to 3 sources for group {group_id} after token error")
-                    continue  # Try again with reduced content
-                
-                # Standard retry with backoff
-                retry_count += 1
-                print(f"Error in API call (attempt {retry_count}/{max_retries}): {type(e).__name__}: {error_message}")
-                
-                if retry_count < max_retries:
-                    wait_time = 2 ** retry_count  # 2, 4, 8 seconds
-                    print(f"Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"Max retries reached for group {group_id}, giving up")
-                    import traceback
-                    traceback.print_exc()
+        # Handle errors
+        if error == "rate_limit":
+            # Return None to indicate rate limit - this will be queued for later
+            return None
+        
+        # Handle token limit errors
+        if error == "context_length" and len(valid_sources) > MIN_VALID_SOURCES:
+            # Take just 3 shortest sources with aggressive truncation
+            valid_sources.sort(key=lambda x: len(x.get('scraped_description', '')))
+            reduced_sources = valid_sources[:min(3, len(valid_sources))]
             
+            # Create a reduced text with more aggressive truncation
+            sources_text = ""
+            for i, source in enumerate(reduced_sources):
+                sources_text += f"Fuente {i+1}: {source['source_medium']}\n"
+                sources_text += f"Titular: {source['title']}\n"
+                
+                # Very aggressive truncation
+                desc = source['scraped_description']
+                max_length = 5000 if i == 0 else (3000 if i == 1 else 2000)
+                if len(desc) > max_length:
+                    desc = desc[:max_length] + "... [truncated]"
+                        
+                sources_text += f"Descripción: {desc}\n\n"
+            
+            user_message = f"Analiza las siguientes fuentes de noticias:\n\n{sources_text}"
+            print(f"⚠️ Reducing to {len(reduced_sources)} sources for group {group_id} after token error")
+            
+            # Try again with reduced content
+            result, error = call_openai_api(client, system_message, user_message, group_id)
+            
+            # If still failing, we need to give up
+            if not result:
+                return None
+        
         return result, group_dict
         
     except Exception as e:
