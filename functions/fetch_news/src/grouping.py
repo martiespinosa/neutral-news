@@ -394,8 +394,8 @@ def _get_next_available_group_id(df, all_group_ids):
     
     # Retrieve all group IDs from the database
     if all_group_ids:
-        # Convert to numeric, ignoring non-numeric values
-        numeric_ids = pd.to_numeric(pd.Series(all_group_ids), errors='coerce').dropna()
+        # Convert to numeric, ignoring non-numeric values - convert set to list first
+        numeric_ids = pd.to_numeric(pd.Series(list(all_group_ids)), errors='coerce').dropna()
         
         if not numeric_ids.empty:
             # Filter out 7-digit IDs (subdivision IDs)

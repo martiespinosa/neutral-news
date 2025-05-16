@@ -22,7 +22,6 @@ def process_news_groups():
         
         # Neutralizar los grupos recién creados y guardarlos
         neutralized_count = neutralize_and_more(groups_prepared)
-        
         print(f"Neutralized {neutralized_count} groups")
     except Exception as e:
         print(f"Error in process_news_groups: {str(e)}")
@@ -153,13 +152,13 @@ def prepare_groups_for_neutralization(grouped_news) -> list:
     
     # Create final list of valid groups
     valid_groups = []
-    for grupo, sources in grupos.items():
-        if len(sources) >= MIN_VALID_SOURCES:
+    for k, v in grupos.items():
+        if len(v) >= MIN_VALID_SOURCES:
             # Mark whether this is an existing or new group
-            is_existing = grupo in existing_groups
+            is_existing = k in existing_groups
             valid_groups.append({
-                "group": grupo, 
-                "sources": sources,
+                "group": k, 
+                "sources": v,
                 "is_existing_group": is_existing
             })
     

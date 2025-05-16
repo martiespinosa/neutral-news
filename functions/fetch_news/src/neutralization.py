@@ -47,12 +47,12 @@ class RateLimiter:
 # Create a single instance of the rate limiter
 api_rate_limiter = RateLimiter()
 
-def neutralize_and_more(news_groups, batch_size=5):
+def neutralize_and_more(groups_prepared):
     """
     Coordina el proceso de neutralización de grupos de noticias y actualiza Firestore.
     Procesa los grupos en paralelo usando ThreadPoolExecutor para optimizar el rendimiento.
     """
-    if not news_groups:
+    if not groups_prepared:
         print("No news groups to neutralize")
         return 0
     
@@ -61,12 +61,6 @@ def neutralize_and_more(news_groups, batch_size=5):
     try:
         groups_to_neutralize = []
         groups_to_update = []
-        
-        no_group_count = 0
-        no_group_ids = []
-        
-        no_sources_count = 0
-        no_sources_ids = []
         
         unchanged_group_count = 0
         unchanged_group_ids = []
@@ -77,23 +71,13 @@ def neutralize_and_more(news_groups, batch_size=5):
         to_neutralize_count = 0
         to_neutralize_ids = []
         
-        for group in news_groups:
+        for group in groups_prepared:
             group_number = group.get('group')
             if group_number is not None:
                 group_number = int(float(group_number))
                 group['group'] = group_number
 
             sources = group.get('sources', [])
-            
-            if not group:
-                no_group_count += 1
-                no_group_ids.append(group_number)
-                continue
-            if not sources or len(sources) < MIN_VALID_SOURCES:
-                no_sources_count += 1
-                no_sources_ids.append(group_number)
-                continue
-
                 
             # Extraer los IDs de las noticias actuales
             current_source_ids = [source.get('id') for source in sources if source.get('id')]
@@ -124,7 +108,6 @@ def neutralize_and_more(news_groups, batch_size=5):
                             'group': group_number,
                             'sources': sources,
                             'source_ids': current_source_ids,
-                            'existing_doc': existing_data
                         })
                         continue
             
@@ -161,8 +144,8 @@ def neutralize_and_more(news_groups, batch_size=5):
         def process_group(group_info, is_update=False):
             try:
                 group = group_info.get('group')
-                sources = group_info.get('sources', [])
-                source_ids = group_info.get('source_ids', [])
+                sources = group_info.get('sources', []) # Existing sources in db
+                source_ids = group_info.get('source_ids', []) # Current source IDs
                 
                 # Generate neutral analysis for this single group
                 response = generate_neutral_analysis_single(group_info, is_update)
@@ -342,18 +325,18 @@ def check_if_update_needed(group_id, valid_sources):
         )
         
         # Skip update if neither condition is met
-        if change_ratio < 0.5 or not significant_increase:
-            if (change_ratio < 0.5):
-                print(f"ℹ️ Skipping update for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}) (min 50%).")
-            elif not significant_increase:
-                print(f"ℹ️ Skipping update for group {group_id}: From {existing_count} to {current_count} sources (no significant increase).")
+        MIN_CHANGE_RATIO = 0.5
+        if change_ratio < MIN_CHANGE_RATIO or not significant_increase:
+            
+            print(f"ℹ️ Skipping update for group {group_id}: {len(changed_sources)}/{existing_count} sources changed ({change_ratio:.2%}) {'<' if change_ratio < MIN_CHANGE_RATIO else '>'} {MIN_CHANGE_RATIO * 100}%."+
+                    f" From {existing_count} to {current_count} sources {('(no significant increase)' if not significant_increase else '')}")
+
             # Find sources that were added to the valid_sources that must be unassigned
             # This is the difference between current and existing source IDs
             # We only want to unassign sources that are not in the existing db valid sources
             added_sources = current_source_ids - existing_source_ids
             if added_sources:
                 group_dict[str(group_id)] = list(added_sources)
-                print(f"ℹ️ Marked {len(added_sources)} sources for unassignment from group {group_id}")
 
             # Return existing data to avoid regeneration
             return existing_data, group_dict
@@ -381,7 +364,7 @@ def apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT, is_u
                     group_dict[str(group_id)].append(source_id)
         
         valid_sources = valid_sources[:SOURCES_LIMIT]
-        print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources, marked {len(removed_sources)} excess sources for unassignment")
+        print(f"ℹ️ Limiting to {SOURCES_LIMIT} sources, marked {len(removed_sources)} excess sources for unassignment for group {group_id}")
     
     if len(valid_sources) < MIN_VALID_SOURCES:
         handle_insufficient_sources(valid_sources, group_id, group_dict, is_update)
@@ -414,9 +397,9 @@ def handle_insufficient_sources(valid_sources, group_id, group_dict, is_update=F
                 if str(group_id) not in group_dict:
                     group_dict[str(group_id)] = []
                 group_dict[str(group_id)].append(source_id)
-                print(f"  Unassigned group from the only remaining source {source_id}")
+                print(f"  Unassigned group {group_id} from the only remaining source {source_id}")
             except Exception as e:
-                print(f"  Failed to unassign group from source {source_id}: {str(e)}")
+                print(f"  Failed to unassign group {group_id} from source {source_id}: {str(e)}")
 
 def prepare_sources_for_api(valid_sources):
     """Prepare sources for API call by handling long descriptions."""
@@ -467,7 +450,18 @@ def call_openai_api(client, system_message, user_message, group_id):
             
             # Check for rate limit/quota errors
             if "429" in error_message or "insufficient_quota" in error_message or "rate_limit" in error_message:
-                print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
+                if "rate_limit" in error_message:
+                    # This is a rate limit error, handle it
+                    print(f"⛔ Rate limit or quota exceeded for group {group_id}. Stopping processing.")
+                if "insufficient_quota" in error_message:
+                    # This is a quota error, handle it
+                    print(f"⛔ Insufficient quota for group {group_id}. Stopping processing.")
+                if "429" in error_message:
+                    # This is a 429 error, handle it
+                    print(f"⛔ 429 error for group {group_id}. Stopping processing.")
+                # Print Stack Trace
+                import traceback
+                traceback.print_exc()
                 api_rate_limiter.force_cooldown()
                 return None, "rate_limit"
             
@@ -525,7 +519,6 @@ def generate_neutral_analysis_single(group_info, is_update):
             
         # Step 2: Select one source per media (deduplicate)
         valid_sources, sources_to_deduplicate = deduplicate_sources_by_medium(initial_sources)
-        print(f"ℹ️ Selected {len(valid_sources)} sources (one per media) from {len(sources)} original sources for group {group_id}")
         
         # Step 3: For updates, check if update is necessary
         if is_update:
@@ -538,9 +531,11 @@ def generate_neutral_analysis_single(group_info, is_update):
                 return existing_data_to_keep, group_dict, skipped
             elif sources_to_deduplicate: # Deduplicate sources and proceed with update
                 delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
+                print(f"ℹ️ Deduplicated sources for group {group_id} during update. Selected {len(valid_sources)} valid sources from {len(initial_sources)} original sources.")
         elif sources_to_deduplicate:
             # For new neutralizations, just delete invalid sources
             delete_invalid_sources_from_db(is_update, sources_to_deduplicate, group_dict, group_id)
+            print(f"ℹ️ Deduplicated sources for group {group_id} during update. Selected {len(valid_sources)} valid sources from {len(initial_sources)} original sources.")
 
         # Step 4: Apply source limits and handle insufficient sources
         valid_sources, group_dict = apply_source_limits(valid_sources, group_id, group_dict, SOURCES_LIMIT, is_update)
