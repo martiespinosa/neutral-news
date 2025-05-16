@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 from .config import initialize_firebase
+import traceback
 
 def parse_pub_date(date_str):
     """
@@ -108,6 +109,25 @@ def store_news_in_firestore(news_list):
     print(f"Saved {news_count} new news to Firestore")
     return news_count
 
+def get_all_group_ids() -> set:
+    """
+    Get all unique group IDs from the 'neutral_news' collection in Firestore
+    """
+    db = initialize_firebase()
+    groups_query = db.collection('neutral_news').select(['group'])
+    groups_list = list(groups_query.stream())
+    
+    groups_ids = set()
+    for doc in groups_list:
+        data = doc.to_dict()
+        if 'group' in data and data['group'] is not None:
+            groups_ids.add(data['group'])
+    
+    print(f"Found {len(groups_ids)} unique group IDs")
+    # Print them in a single line for debugging
+    print(f"Group IDs: {', '.join(map(str, groups_ids))}")
+    return groups_ids
+
 def get_news_for_grouping() -> tuple:
     """
     Get news items for grouping process with improved reference selection
@@ -117,13 +137,13 @@ def get_news_for_grouping() -> tuple:
     """
     db = initialize_firebase()
 
-    RECENT_GROUPS_HOURS = 6 # Number of hours to look back for recent groups
-    REFERENCE_NEWS_HOURS = 6 # Number of hours to look back for reference news
+    RECENT_GROUPS_HOURS = 24 # Number of hours to look back for recent groups
+    REFERENCE_NEWS_HOURS = 48 # Number of hours to look back for reference news
 
     # Get recent unique group IDs
     recent_groups_time_threshold = datetime.now() - timedelta(hours=RECENT_GROUPS_HOURS)
     recent_groups = db.collection('neutral_news').where(
-        'created_at', '>=', recent_groups_time_threshold
+        'date', '>=', recent_groups_time_threshold
     )
 
     recent_groups_list = list(recent_groups.stream())
@@ -137,7 +157,7 @@ def get_news_for_grouping() -> tuple:
     # OPTIMIZED: Make a single query to get all news from the time period
     reference_groups_time_threshold = datetime.now() - timedelta(hours=REFERENCE_NEWS_HOURS)
     all_news_query = db.collection('news').where(
-        'created_at', '>=', reference_groups_time_threshold
+        'pub_date', '>=', reference_groups_time_threshold
     )
     
     all_news = list(all_news_query.stream())
@@ -320,6 +340,35 @@ def load_all_news_links_from_medium(medium):
     
     return news_links
 
+def ensure_standard_datetime(dt):
+    """
+    Convert Firebase DatetimeWithNanoseconds to standard Python datetime.
+    This prevents errors with nanosecond precision when updating Firestore.
+    """
+    if dt is None:
+        return datetime.now()
+    
+    # If it's already a standard datetime (not a Firebase datetime), return it
+    if type(dt).__name__ == 'datetime':
+        return dt
+    
+    # Convert Firebase DatetimeWithNanoseconds to standard datetime
+    try:
+        # Create a new standard datetime object with the same values
+        return datetime(
+            year=dt.year,
+            month=dt.month,
+            day=dt.day,
+            hour=dt.hour,
+            minute=dt.minute,
+            second=dt.second,
+            microsecond=dt.microsecond,
+            tzinfo=dt.tzinfo
+        )
+    except Exception:
+        # If conversion fails, return current time
+        return datetime.now()
+
 def store_neutral_news(group, neutralization_result, source_ids, sources_to_unassign=None):
     """
     Almacena el resultado de la neutralización en la colección neutral_news.
@@ -345,11 +394,16 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
                     source_ids.remove(source_id)
 
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
+        # Convert to standard datetime to avoid nanosecond precision issues
+        oldest_pub_date = ensure_standard_datetime(oldest_pub_date)
 
         image_url, image_medium = get_most_neutral_image(
             source_ids,  
             neutralization_result.get("source_ratings", [])
         )
+        
+        # Ensure all datetime objects are standard Python datetime
+        current_time = ensure_standard_datetime(datetime.now())
         
         neutral_news_ref = db.collection('neutral_news').document(str(group))
         neutral_news_data = {
@@ -358,8 +412,8 @@ def store_neutral_news(group, neutralization_result, source_ids, sources_to_unas
             "neutral_description": neutralization_result.get("neutral_description"),
             "category": neutralization_result.get("category"),
             "relevance": neutralization_result.get("relevance"),
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": current_time,
+            "updated_at": current_time,
             "date": oldest_pub_date,
             "image_url": image_url,
             "image_medium": image_medium,
@@ -411,9 +465,11 @@ def update_existing_neutral_news(group, neutralization_result, source_ids, sourc
         )
         
         oldest_pub_date = get_oldest_pub_date(source_ids, db)
+        # Convert to standard datetime
+        oldest_pub_date = ensure_standard_datetime(oldest_pub_date)
         
         # Ensure we're using a standard datetime object, not a DatetimeWithNanoseconds
-        current_time = datetime.now()
+        current_time = ensure_standard_datetime(datetime.now())
         
         # Actualizamos solo los campos necesarios, manteniendo otros metadatos
         neutral_news_data = {
@@ -530,6 +586,42 @@ def get_most_neutral_image(source_ids, source_ratings):
         traceback.print_exc()
         return None
     
+def normalize_datetime(dt):
+    """Convert datetime to naive (remove timezone info) if it has timezone info"""
+    if dt is None:
+        return datetime.now()
+    
+    # Handle Firebase DatetimeWithNanoseconds specifically
+    dt_type = type(dt).__name__
+    if dt_type == 'DatetimeWithNanoseconds':
+        # Create a new standard datetime object without the nanosecond precision
+        try:
+            return datetime(
+                year=dt.year,
+                month=dt.month,
+                day=dt.day,
+                hour=dt.hour,
+                minute=dt.minute,
+                second=dt.second,
+                microsecond=dt.microsecond,
+                tzinfo=None  # Remove timezone info
+            )
+        except Exception:
+            return datetime.now()
+    
+    if not isinstance(dt, datetime):
+        return datetime.now()
+    
+    if dt.tzinfo is not None:
+        # Convert to UTC then remove timezone info
+        try:
+            dt = dt.astimezone(tz=None).replace(tzinfo=None)
+        except Exception:
+            # If conversion fails, create a new naive datetime
+            return datetime.now()
+    
+    return dt
+
 def get_oldest_pub_date(source_ids, db):
     """
     Obtiene la fecha de publicación más antigua de una lista de IDs de noticias.
@@ -545,8 +637,28 @@ def get_oldest_pub_date(source_ids, db):
         """Convert datetime to naive (remove timezone info) if it has timezone info"""
         if dt is None:
             return datetime.now()
+        
+        # Handle Firebase DatetimeWithNanoseconds specifically
+        dt_type = type(dt).__name__
+        if dt_type == 'DatetimeWithNanoseconds':
+            # Create a new standard datetime object without the nanosecond precision
+            try:
+                return datetime(
+                    year=dt.year,
+                    month=dt.month,
+                    day=dt.day,
+                    hour=dt.hour,
+                    minute=dt.minute,
+                    second=dt.second,
+                    microsecond=dt.microsecond,
+                    tzinfo=None  # Remove timezone info
+                )
+            except Exception:
+                return datetime.now()
+        
         if not isinstance(dt, datetime):
             return datetime.now()
+        
         if dt.tzinfo is not None:
             # Convert to UTC then remove timezone info
             try:
@@ -554,6 +666,7 @@ def get_oldest_pub_date(source_ids, db):
             except Exception:
                 # If conversion fails, create a new naive datetime
                 return datetime.now()
+        
         return dt
 
     for news_id in source_ids:
@@ -593,7 +706,17 @@ def get_oldest_pub_date(source_ids, db):
                     
                     # Update Firestore if needed
                     try:
-                        batch.update(doc.reference, {"pub_date": fixed_date})
+                        # Ensure we're using a standard Python datetime object for Firestore update
+                        standard_fixed_date = datetime(
+                            year=fixed_date.year,
+                            month=fixed_date.month,
+                            day=fixed_date.day,
+                            hour=fixed_date.hour,
+                            minute=fixed_date.minute,
+                            second=fixed_date.second,
+                            microsecond=fixed_date.microsecond
+                        )
+                        batch.update(doc.reference, {"pub_date": standard_fixed_date})
                         batch_count += 1
                         if batch_count >= 450:
                             batch.commit()
@@ -601,10 +724,13 @@ def get_oldest_pub_date(source_ids, db):
                             batch_count = 0
                     except Exception as e:
                         print(f"Error updating pub_date for {news_id}: {str(e)}")
+                        # Print traceback for debugging
+                        traceback.print_exc()
                 else:
                     pub_dates.append(pub_date)
         except Exception as e:
             print(f"Error processing document {news_id}: {str(e)}")
+            traceback.print_exc()
             continue
 
     # Commit any remaining updates
@@ -613,6 +739,7 @@ def get_oldest_pub_date(source_ids, db):
             batch.commit()
         except Exception as e:
             print(f"Error committing batch updates: {str(e)}")
+            traceback.print_exc()
 
     # Make sure the default is also a normalized datetime
     if not pub_dates:
