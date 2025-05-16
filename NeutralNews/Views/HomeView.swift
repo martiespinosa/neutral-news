@@ -58,6 +58,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarLeading) { dayMenu }
                 ToolbarItem(placement: .topBarTrailing) { orderMenu }
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
+//                ToolbarItem(placement: .topBarTrailing) { options }
             }
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
@@ -76,6 +77,16 @@ struct HomeView: View {
             Label("Cambiar día", systemImage: "calendar")
         }
     }
+    
+    // TODO: Implementar este menu?
+//    var options: some View {
+//        Menu {
+//            orderMenu
+//            filterMenu
+//        } label: {
+//            Label("Opciones", systemImage: "ellipsis.circle")
+//        }
+//    }
     
     var orderMenu: some View {
         Menu {
