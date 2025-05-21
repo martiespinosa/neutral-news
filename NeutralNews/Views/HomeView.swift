@@ -41,7 +41,7 @@ struct HomeView: View {
                     VStack {
                         Spacer()
                         ProgressView()
-                            .scaleEffect(2)
+                            .controlSize(.large)
                         Spacer()
                     }
                     .frame(minHeight: UIScreen.main.bounds.height - 250)
